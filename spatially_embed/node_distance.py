@@ -3,7 +3,7 @@ import torch
 
 def sphere_distance(n, r):
     '''
-    创建一个球体，将N个点平均分布到球体上，计算每个点之间的距离
+    创建一个球体，将N个点均匀分布到球面上，计算每个点之间的距离
     :param n: int, 点的数量
     :param r: float, 球体半径
     :return D: torch.tensor, N*N, 每个点之间的距离
@@ -27,7 +27,7 @@ def sphere_distance(n, r):
 
 def cube_distance(n):
     '''
-    创建一个立方体，将N个点平均分布到立方体上，计算每个点之间的距离
+    创建一个立方体，将N个点均匀分布到立方体内，计算每个点之间的距离
     :param n:  int, 点的数量
     :return:  D: torch.tensor, N*N, 每个点之间的距离
     '''
