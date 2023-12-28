@@ -61,19 +61,13 @@ class SpatiallyLoss(nn.Module):
                 dis_mat = self.distances[name].to(param.device)
                 weight_mat = torch.abs(param)
                 weight_node_strength = torch.sum(weight_mat, dim=1)
-                diag_weight_node_strength = torch.diag(weight_node_strength)
-                S = diag_weight_node_strength
-                # S = torch.pow(diag_weight_node_strength, -0.5)
-                # S = S @ weight_mat @ S # S = D^(-1/2) * W * D^(-1/2) 会产生nan值
-                # S = S  @ S
-                # if S has nan print nan these print ok
-                # C = e^S
-                # C = torch.linalg.matrix_exp(S).fill_diagonal_(0)
-                C = S
-                # normalize C
+                weight_node_strength = torch.pow(weight_node_strength, -0.5)
+                S = torch.diag(weight_node_strength)
+                S_ = S @ weight_mat @ S 
+                C = torch.linalg.matrix_exp(S_).fill_diagonal_(0)
                 reg_loss += torch.sum(weight_mat * dis_mat * C)
         return reg_loss
-
+        
     def forward(self, inputs, target):
         base_loss = self.base_criterion(inputs, target)
         reg_loss = self.reg()
