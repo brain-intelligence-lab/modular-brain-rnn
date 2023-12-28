@@ -53,6 +53,10 @@ class ReccurrentLayer(nn.Module):
         self.neuron = LIFNeuron(tau, v_th, gamma)
         self.forward_linear = nn.Linear(input_size, hidden_size)
         self.recurrent_weight = nn.Parameter(torch.Tensor(hidden_size, hidden_size))
+        # 手动初始化以避免训练前或训练后出现nan值
+        nn.init.xavier_normal_(self.recurrent_weight) 
+        # 不能初始化成同一个常数，这样会导致pearsonr计算结果为nan
+        # self.recurrent_weight.data.fill_(1.0 / hidden_size)
 
     def forward(self, input, reccurrent):
         input_ = self.forward_linear(input)
