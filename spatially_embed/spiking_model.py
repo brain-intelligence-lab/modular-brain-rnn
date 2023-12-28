@@ -81,14 +81,16 @@ class SNN(nn.Module):
         self.reset()
         T = input.size(0)
         batch_size = input.size(1)
-        reccurrent = torch.zeros(batch_size, self.hidden_size, device=input.device)
+        reccurrents = [torch.zeros(batch_size, self.hidden_size, device=input.device) \
+            for _ in range(self.layer_num)]
         r_out = torch.zeros(T, batch_size, self.hidden_size, device=input.device)
         for t in range(T):
             input_ = input[t, ...]
             for i in range(self.layer_num):
-                reccurrent = self.reccurent_layers[i](input_, reccurrent)
-                input_ = reccurrent
-            r_out[t, ...] = reccurrent
+                out = self.reccurent_layers[i](input_, reccurrents[i])
+                input_ = out
+                reccurrents[i] = out
+            r_out[t, ...] = out
         out = self.output_layer(r_out)
         return out
 
