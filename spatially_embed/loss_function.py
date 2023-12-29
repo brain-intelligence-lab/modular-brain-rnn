@@ -74,6 +74,40 @@ class SpatiallyLoss(nn.Module):
         return base_loss + self.lamb * reg_loss
 
 
+# https://julien-vitay.net/lecturenotes-neurocomputing/4-neurocomputing/5-Hebbian.html#
 
-
-
+class Hebbian(nn.Module):
+    def __init__(self, weight, lamb = -1):
+        '''
+        :param weight: 某一层的权重矩阵
+        :param lamb: hebbian项的缩放系数(-1: learnable)
+        '''
+        super(Hebbian, self).__init__()
+        self.weight = weight
+        self.lamb = lamb
+        # -1: learnable
+        if lamb == -1:
+            self.lamb = torch.rand_like(self.weight.data)
+            self.lamb = nn.Parameter(self.lamb)
+        
+        self.alpha = 0.9
+        self.theta_in = 0
+        self.theta_out = 0
+        
+    def forward(self, r_in, r_out):
+        '''
+        :param r_in: in_feature (input对T、batch_size取mean之后得到的平均发放率)
+        :param r_out: out_feature (output对T、batch_size取mean之后得到的平均发放率)
+        '''
+        # 对batch_size取mean得到batch内的平均值
+        self.theta_in = self.alpha * self.theta_in + r_in
+        self.theta_out = self.alpha * self.theta_out + r_out
+        
+        r_in_ = (r_in - self.theta_in).unsqueeze(1)
+        r_out_ = (r_out - self.theta_out).unsqueeze(0)
+        
+        delta_w = torch.matmul(r_in_, r_out_)
+        Hebbian_reg_term = self.lamb * delta_w * self.weight
+        return Hebbian_reg_term
+    
+        

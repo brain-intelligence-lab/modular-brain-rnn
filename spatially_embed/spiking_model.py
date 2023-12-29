@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from spatially_embed.loss_function import Hebbian
 
 class SpikeAct(torch.autograd.Function):
     @staticmethod
@@ -66,7 +67,7 @@ class ReccurrentLayer(nn.Module):
 
 
 class SNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, layer_num, tau, v_th, gamma):
+    def __init__(self, input_size, hidden_size, output_size, layer_num, tau, v_th, gamma, use_hebbian=False, lamb=0.001):
         super(SNN, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -80,6 +81,9 @@ class SNN(nn.Module):
             self.reccurent_layers.append(ReccurrentLayer(input_size, hidden_size, tau, v_th, gamma))
             input_size = hidden_size
         self.output_layer = nn.Linear(hidden_size, output_size)
+        
+        self.hebbian = Hebbian(self.reccurent_layers[1].forward_linear.weight, lamb) if use_hebbian else None
+        self.hebbian_reg_term = 0
 
     def forward(self, input):
         self.reset()
@@ -87,18 +91,38 @@ class SNN(nn.Module):
         batch_size = input.size(1)
         reccurrents = [torch.zeros(batch_size, self.hidden_size, device=input.device) \
             for _ in range(self.layer_num)]
-        r_out = torch.zeros(T, batch_size, self.hidden_size, device=input.device)
+        total_out = torch.zeros(T, batch_size, self.hidden_size, device=input.device)
+        
+        if self.hebbian and self.training:
+            r_in = torch.zeros(T, batch_size, self.hidden_size, device=input.device)
+            r_out = torch.zeros(T, batch_size, self.hidden_size, device=input.device)
+        
         for t in range(T):
             input_ = input[t, ...]
             for i in range(self.layer_num):
+                if self.hebbian and self.training and i == 1:
+                    r_in[t, ...] = input_.detach()
+                    
                 out = self.reccurent_layers[i](input_, reccurrents[i])
                 input_ = out
                 reccurrents[i] = out
-            r_out[t, ...] = out
-        out = self.output_layer(r_out)
+                
+                if self.hebbian and self.training and i == 1:
+                    r_out[t, ...] = out.detach()
+                
+            total_out[t, ...] = out
+        
+        out = self.output_layer(total_out)
+        
+        if self.hebbian and self.training:
+            r_in = r_in.mean(0).mean(0)
+            r_out = r_out.mean(0).mean(0)
+            self.hebbian_reg_term = self.hebbian(r_in, r_out).sum()
+            
         return out
 
     def reset(self):
+        self.hebbian_reg_term = 0
         for i in range(self.layer_num):
             self.reccurent_layers[i].neuron.reset()
 
