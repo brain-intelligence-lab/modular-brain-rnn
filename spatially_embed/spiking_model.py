@@ -67,7 +67,7 @@ class ReccurrentLayer(nn.Module):
 
 
 class SNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, layer_num, tau, v_th, gamma, use_hebbian=False, lamb=0.001):
+    def __init__(self, input_size, hidden_size, output_size, layer_num, tau, v_th, gamma, use_hebbian=False, alpha=0.9, lamb=0.001):
         super(SNN, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -82,7 +82,7 @@ class SNN(nn.Module):
             input_size = hidden_size
         self.output_layer = nn.Linear(hidden_size, output_size)
         
-        self.hebbian = Hebbian(self.reccurent_layers[1].forward_linear.weight, lamb) if use_hebbian else None
+        self.hebbian = Hebbian(self.reccurent_layers[1].forward_linear.weight, alpha=alpha, lamb=lamb) if use_hebbian else None
         self.hebbian_reg_term = 0
 
     def forward(self, input):
