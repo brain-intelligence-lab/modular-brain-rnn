@@ -1,0 +1,98 @@
+import bct
+import numpy as np
+import torch
+import torch.nn as nn
+from scipy.stats import pearsonr
+import time
+
+def modularity_louvain_dir(model, key_name, binary=False, q=0.9):
+    model.eval()
+    layer_num = 0
+    node_num = []
+    for name, param in model.named_parameters():
+        if key_name in name:
+            layer_num += 1
+            node_num.append(param.shape[0])
+    modularity_mat = np.zeros((layer_num))
+    modularity_cluster = np.zeros((layer_num, max(node_num)))
+    count = 0
+    for name, param in model.named_parameters():
+        if key_name in name:
+            weight_mat = param.clone().detach().cpu().numpy()
+            if binary:
+                weight_mat = binary_network(weight_mat, q)
+            MN, modularity = bct.modularity_louvain_dir(weight_mat)
+            print('layer: {}, modularity: {:.4f}'.format(name, modularity))
+            modularity_mat[count] = modularity
+            modularity_cluster[count, :MN.shape[0]] = MN
+            count += 1
+    return modularity_mat, modularity_cluster
+
+def modularity_mat(weight, binary=False, q=0.9):
+    if binary:
+        weight_new = binary_network(weight, q)
+    else:
+        weight_new = weight
+    weight_new = np.abs(weight_new)
+    MN, modularity = bct.modularity_louvain_dir(weight_new)
+    # MN, modularity = bct.modularity_und(weight, gamma = 1)
+    return MN, modularity
+
+def similarity_mat(weight, dis_mat):
+    weight_mat = np.abs(weight)
+    weight_mat = weight_mat.reshape(-1)
+    distance = dis_mat.reshape(-1)
+    corr, _ = pearsonr(weight_mat, distance)
+    return corr
+
+
+
+def similarity(model, reg_names, dis_mat):
+    model.eval()
+    similarity_mat = []
+    for name, param in model.named_parameters():
+        if name in reg_names:
+            weight_mat = param.clone().detach().cpu().numpy()
+            weight_mat = np.abs(weight_mat)
+            weight_mat = weight_mat.reshape(-1)
+            distance = dis_mat[name].reshape(-1)
+            corr, _ = pearsonr(weight_mat, distance)
+            print('layer: {}, similarity: {:.4f}'.format(name, corr))
+            similarity_mat.append(corr)
+    return np.array(similarity_mat)
+
+def binary_network(weight, q):
+    adj_weight = weight.copy()
+    # binary the adj_weight
+    threshold = np.quantile(adj_weight, q)
+    adj_weight[adj_weight < threshold] = 0
+    adj_weight[adj_weight >= threshold] = 1
+    return adj_weight
+
+def small_world_coef(adj_weight, q, niter=100):
+    binary_weight = binary_network(adj_weight, q)
+    c_net = np.mean(bct.clustering_coef_bd(binary_weight))
+    l_net = bct.efficiency_bin(binary_weight)
+    c_rand = np.zeros((niter))
+    l_rand = np.zeros((niter))
+    for i in range(niter):
+        rand_weight, _ = bct.randmio_dir(binary_weight, itr=10)
+        c_rand[i] = np.mean(bct.clustering_coef_bd(rand_weight))
+        l_rand[i] = bct.efficiency_bin(rand_weight)
+    c_rand = np.mean(c_rand)
+    l_rand = np.mean(l_rand)
+    return (c_net / c_rand) / (l_net / l_rand)
+
+
+if __name__ == '__main__':
+    # 随机邻接矩阵
+    A = np.random.rand(30, 30)
+    A = (A + A.T) / 2
+    A = A - np.diag(np.diag(A))
+    t1 = time.time()
+    smw = small_world_coef(A, 0.6)
+    t2 = time.time()
+    print(smw)
+    print(t2-t1)
+
+
