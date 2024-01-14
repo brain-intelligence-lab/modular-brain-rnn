@@ -6,6 +6,14 @@ from scipy.stats import pearsonr
 import time
 
 def modularity_louvain_dir(model, key_name, binary=False, q=0.9):
+    '''
+    :param model: 模型
+    :param key_name: 模型中参数的名称
+    :param binary: 是否将网络二值化
+    :param q: 二值化的阈值
+    :return: modularity_mat: 每一层的模块度
+             modularity_cluster: 每一层的社团划分
+    '''
     model.eval()
     layer_num = 0
     node_num = []
@@ -29,6 +37,12 @@ def modularity_louvain_dir(model, key_name, binary=False, q=0.9):
     return modularity_mat, modularity_cluster
 
 def modularity_mat(weight, binary=False, q=0.9):
+    '''
+    :param weight: 邻接矩阵
+    :param binary: 是否将网络二值化
+    :param q: 二值化的阈值
+    :return:
+    '''
     if binary:
         weight_new = binary_network(weight, q)
     else:
@@ -39,6 +53,11 @@ def modularity_mat(weight, binary=False, q=0.9):
     return MN, modularity
 
 def similarity_mat(weight, dis_mat):
+    '''
+    :param weight: 权重矩阵
+    :param dis_mat: 距离矩阵
+    :return: 相似度
+    '''
     weight_mat = np.abs(weight)
     weight_mat = weight_mat.reshape(-1)
     distance = dis_mat.reshape(-1)
@@ -48,6 +67,7 @@ def similarity_mat(weight, dis_mat):
 
 
 def similarity(model, reg_names, dis_mat):
+    
     model.eval()
     similarity_mat = []
     for name, param in model.named_parameters():
