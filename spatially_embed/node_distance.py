@@ -58,6 +58,36 @@ def cube_distance(n):
 
     return torch.from_numpy(D).type(torch.float), points
 
+def squre_distance(n):
+    '''
+    创建一个方形，将N个点平均分布到方形内，计算每个点之间的距离
+    :param n:  int, 点的数量
+    :return:  D: torch.tensor, N*N, 每个点之间的距离
+    '''
+
+    # 1. 创建一个方形
+    # 计算方形的边长，a, b 满足条件 a*b = N 且 a,b 接近 N^(1/2)，a,b为整数
+    a = int(np.ceil(n ** (1 / 2)))
+    b = int(np.ceil(n / a))
+    print(a,b)
+
+    # 2. 将N个点平均分布到方形内
+    x = np.linspace(0, a - 1, a)
+    y = np.linspace(0, b - 1, b)
+
+    x, y = np.meshgrid(x, y)
+
+    x = x.flatten()
+    y = y.flatten()
+
+    points = np.column_stack((x, y))  # 合并坐标
+
+    points = points[0:n, :]
+
+    D = np.sqrt(np.sum((points[:, np.newaxis] - points) ** 2, axis=2))
+
+    return torch.from_numpy(D).type(torch.float), points
+
 if __name__ == '__main__':
     N = 10
     print(N**(1/3))
