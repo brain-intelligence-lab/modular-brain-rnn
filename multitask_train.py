@@ -28,6 +28,10 @@ class RNN(nn.Module):
         self.rule_readin = nn.Linear(n_rule, hidden_size, bias=False)
         self.hidden_state = 0
         self.recurrent_conn = nn.Linear(hidden_size, hidden_size)
+        # TODO:原文说这样初始化, 但我反而训不太动
+        # scale_factor_q = 0.5
+        # self.recurrent_conn.weight.data = torch.eye(hidden_size) * scale_factor_q        
+        
         self.readout = nn.Linear(hidden_size, n_output)
         # TODO:这里使用relu训不上去，训到后面会出现nan
         self.rnn_activation = nn.Softplus()
@@ -165,7 +169,7 @@ def do_eval(model, log, rule_train):
 
     perf_tests_min = np.min([log['perf_'+r][-1] for r in rule_tmp])
     log['perf_min'].append(perf_tests_min)
-    print('avg'+'  | perf {:0.3f}'.format(np.mean(perf_tmp)))
+    print('avg'+'  | perf {:0.3f}'.format(np.mean(perf_tests_mean)))
     print('min'+'  | perf {:0.3f}'.format(np.mean(perf_tests_min)))
 
     return log
@@ -187,10 +191,20 @@ if __name__ == '__main__':
     # Turn into rule_trains format
     hp['rule_probs'] = None
     if hasattr(hp['rule_trains'], '__iter__'):
-        # Set default as 1.
-        rule_prob = np.array(
-                [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
-        hp['rule_probs'] = list(rule_prob/np.sum(rule_prob))
+        if ruleset == 'all':
+            # Set default as 1.
+            prob_base = 1.0 / (18 * 1.0 + 2 * 5.0)
+            rule_prob = np.array(
+                    [rule_prob_map.get(r, prob_base) for r in hp['rule_trains']])
+            for idx, rule_name in enumerate(hp['rule_trains']):
+                if rule_name in task.rules_dict['mante']:
+                    rule_prob[idx] = prob_base * 5.0
+            hp['rule_probs'] = list(rule_prob)
+        else:
+            # Set default as 1.
+            rule_prob = np.array(
+                    [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
+            hp['rule_probs'] = list(rule_prob/np.sum(rule_prob))
 
     model = RNN(hp=hp).to(device)
 
