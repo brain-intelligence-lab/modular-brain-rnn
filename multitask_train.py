@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import spatially_embed.multitask as task
 from collections import defaultdict
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
 import numpy as np
 import pdb
 import os
@@ -17,6 +19,27 @@ def lock_random_seed(seed):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
+def gen_ortho_matrix(dim, rng=None):
+    """Generate random orthogonal matrix
+    Taken from scipy.stats.ortho_group
+    Copied here from compatibilty with older versions of scipy
+    """
+    H = np.eye(dim)
+    for n in range(1, dim):
+        if rng is None:
+            x = np.random.normal(size=(dim-n+1,))
+        else:
+            x = rng.normal(size=(dim-n+1,))
+        # random sign, 50/50, but chosen carefully to avoid roundoff error
+        D = np.sign(x[0])
+        x[0] += D*np.sqrt((x*x).sum())
+        # Householder transformation
+        Hx = -D*(np.eye(dim-n+1) - 2.*np.outer(x, x)/(x*x).sum())
+        mat = np.eye(dim)
+        mat[n-1:, n-1:] = Hx
+        H = np.dot(H, mat)
+    return H
+
 class RNN(nn.Module):
     def __init__(self, hp):
         super(RNN, self).__init__()
@@ -28,14 +51,21 @@ class RNN(nn.Module):
         self.rule_readin = nn.Linear(n_rule, hidden_size, bias=False)
         self.hidden_state = 0
         self.recurrent_conn = nn.Linear(hidden_size, hidden_size)
-        # TODO:原文说这样初始化, 但我反而训不太动
-        # scale_factor_q = 0.5
-        # self.recurrent_conn.weight.data = torch.eye(hidden_size) * scale_factor_q        
-        
+        # 这样初始化会导致一开始几万个trial训练很慢，但后面就上去了
+        scale_factor_q = 0.5
+        if hp['w_rec_init'] == 'diag':
+            self.recurrent_conn.weight.data = torch.eye(hidden_size) * scale_factor_q        
+        elif hp['w_rec_init'] == 'randortho':
+            rng = np.random.RandomState()
+            self.recurrent_conn.weight.data = torch.from_numpy(scale_factor_q * \
+                  gen_ortho_matrix(hidden_size, rng=rng).astype(np.float32))
+
         self.readout = nn.Linear(hidden_size, n_output)
         # TODO:这里使用relu训不上去，训到后面会出现nan
-        self.rnn_activation = nn.Softplus()
-        # self.rnn_activation = nn.ReLU() 
+        if hp['activation'] == 'softplus':
+            self.rnn_activation = nn.Softplus()
+        elif hp['activation'] == 'relu':
+            self.rnn_activation = nn.ReLU() 
 
     def forward(self, x):
         # x:(T, B, input_size)
@@ -118,21 +148,12 @@ def do_eval(model, log, rule_train):
     """Do evaluation.
 
     Args:
-        sess: tensorflow session
         model: Model class instance
         log: dictionary that stores the log
         rule_train: string or list of strings, the rules being trained
     """
     hp = model.hp
-    if not hasattr(rule_train, '__iter__'):
-        rule_name_print = rule_train
-    else:
-        rule_name_print = ' & '.join(rule_train)
-
-    # print('Trial {:7d}'.format(log['trials'][-1]) +
-    #       '  | Time {:0.2f} s'.format(log['times'][-1]) +
-    #       '  | Now training '+rule_name_print)
-    for rule_test in hp['rule_trains']:
+    for rule_test in hp['rules']:
         n_rep = 16
         batch_size_test_rep = int(hp['batch_size_test']/n_rep)
         perf_tmp = list()
@@ -156,9 +177,6 @@ def do_eval(model, log, rule_train):
                 perf_tmp.append(perf_test)
 
         log['perf_'+rule_test].append(np.mean(perf_tmp, dtype=np.float64))
-        # print('{:15s}'.format(rule_test) +
-        #       '  | perf {:0.2f}'.format(np.mean(perf_tmp)))
-
 
     if hasattr(rule_train, '__iter__'):
         rule_tmp = rule_train
@@ -174,48 +192,42 @@ def do_eval(model, log, rule_train):
 
     return log
 
-if __name__ == '__main__':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    seed = 2024
-    lock_random_seed(seed=seed)
-    # TODO:目前oicdmc(较快), mante(较慢)可以用softplus训起来，all勉强能训，更慢
-    ruleset = 'all'
-    hp = task.get_default_hp(ruleset=ruleset)
+
+# https://github.com/gyyang/multitask/blob/master/train.py
+            
+def train(ruleset, device, hp=None, max_steps=1e7, seed=2024, rule_prob_map=None, rule_trains=None, save_name='interleaved.jpg'):
+    # 原文的图x-axis坐标是3000，指的是3000*1000trials，而不是3000trails
+    default_hp = task.get_default_hp(ruleset)
+    if hp is not None:
+        default_hp.update(hp)
+    hp = default_hp
     hp['seed'] = seed
     hp['rng'] = np.random.RandomState(seed)
     hp['rule_trains'] = task.rules_dict[ruleset]
+    if rule_trains is not None:
+        hp['rule_trains'] = rule_trains
+    hp['rules'] = hp['rule_trains']
 
     # Assign probabilities for rule_trains.
-    rule_prob_map = dict()
-
-    # Turn into rule_trains format
+    if rule_prob_map is None:
+        rule_prob_map = dict()
+    
     hp['rule_probs'] = None
     if hasattr(hp['rule_trains'], '__iter__'):
-        if ruleset == 'all':
-            # Set default as 1.
-            prob_base = 1.0 / (18 * 1.0 + 2 * 5.0)
-            rule_prob = np.array(
-                    [rule_prob_map.get(r, prob_base) for r in hp['rule_trains']])
-            for idx, rule_name in enumerate(hp['rule_trains']):
-                if rule_name in task.rules_dict['mante']:
-                    rule_prob[idx] = prob_base * 5.0
-            hp['rule_probs'] = list(rule_prob)
-        else:
-            # Set default as 1.
-            rule_prob = np.array(
-                    [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
-            hp['rule_probs'] = list(rule_prob/np.sum(rule_prob))
+        # Set default as 1.
+        rule_prob = np.array(
+                [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
+        hp['rule_probs'] = list(rule_prob/np.sum(rule_prob))
 
     model = RNN(hp=hp).to(device)
 
     step = 0
-    max_steps = int(2e4)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_list = []
     log = defaultdict(list)
 
-    while step <= max_steps:
+    while step * hp['batch_size_train'] <= max_steps:
         # Training
         rule_train_now = hp['rng'].choice(hp['rule_trains'],
                                             p=hp['rule_probs'])
@@ -244,11 +256,187 @@ if __name__ == '__main__':
         optimizer.step()
         
         step += 1
-        if step % 50 == 0:
-            print(f'Step [{step}/{max_steps}], Loss: {sum(loss_list):.4f}')
+        if step % 500 == 0:
+            num_steps = step * hp['batch_size_train']
+            print(f'Step [{num_steps}/{max_steps}], Loss: {sum(loss_list):.4f}')
             log = do_eval(model, log, rule_train=hp['rule_trains'])
-            # print(log)
+            if log['perf_min'][-1] > model.hp['target_perf']:
+                print('Perf reached the target: {:0.2f}'.format(
+                    hp['target_perf']))
+                break
             loss_list = []
+    log_plot(log, savename=save_name)
 
     print("Optimization finished!")
     
+def log_plot(log, savename):
+    plt.clf()
+
+    for list_name, perf_list in log.items():
+        if not 'min' in list_name and not 'avg' in list_name:
+            plt.plot([i+1 for i in range(len(perf_list))], perf_list, label=list_name)
+
+    plt.title('All_task_perf_curve')
+    plt.xlabel('Steps Axis')
+    plt.ylabel('Performance Axis')
+
+    plt.legend()
+    plt.savefig(savename)
+
+def train_sequential(ruleset, device, rule_trains, hp=None, max_steps=1e4, seed=2024, save_name='sequential.jpg'):
+    '''Train the network sequentially.
+
+    Args:
+        rule_trains: a list of list of tasks to train sequentially
+        max_steps: int, maximum number of training steps for each list of tasks
+        ruleset: the set of rules to train
+        seed: int, random seed to be used
+    '''
+    default_hp = task.get_default_hp(ruleset)
+    if hp is not None:
+        default_hp.update(hp)
+    hp = default_hp
+    hp['seed'] = seed
+    hp['rng'] = np.random.RandomState(seed)
+    hp['rule_trains'] = rule_trains
+    hp['rules'] = [r for rs in rule_trains for r in rs]
+
+    # Number of training iterations for each rule
+    rule_train_iters = [len(r)*max_steps for r in rule_trains]
+
+    model = RNN(hp=hp).to(device)
+
+    def get_current_param_list(model, clone=True):
+        v_list = []
+        for _, param in model.named_parameters():
+            if clone:
+                v_list.append(param.clone())
+            else:
+                v_list.append(param)
+        return v_list
+
+    # Using continual learning or not
+    # c, ksi = hp['c_intsyn'], hp['ksi_intsyn']
+    c, ksi = 1.0, 0.01
+
+    criterion = nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    loss_list = []
+    log = defaultdict(list)
+
+    for i_rule_train, rule_train in enumerate(hp['rule_trains']):
+        step = 0
+
+        v_current = get_current_param_list(model)
+
+        if i_rule_train == 0:
+            v_anc0 = v_current
+            Omega0 = [torch.zeros_like(v) for v in v_anc0]
+            omega0 = [torch.zeros_like(v) for v in v_anc0]
+            v_delta = [torch.zeros_like(v) for v in v_anc0]
+        else:
+            v_anc0_prev = v_anc0
+            v_anc0 = v_current
+            v_delta = [v-v_prev for v, v_prev in zip(v_anc0, v_anc0_prev)]
+
+            # Make sure all elements in omega0 are non-negative
+            # Penalty
+            Omega0 = [F.relu(O + o / (v_d ** 2 + ksi))
+                        for O, o, v_d in zip(Omega0, omega0, v_delta)]
+            
+        # Reset
+        omega0 = [torch.zeros_like(v) for v in v_anc0]
+
+        while (step * hp['batch_size_train'] <=
+                   rule_train_iters[i_rule_train]):
+    
+            # Training
+            rule_train_now = hp['rng'].choice(rule_train)
+            # Generate a random batch of trials.
+            # Each batch has the same trial length
+            trial = task.generate_trials(
+                    rule_train_now, hp, 'random',
+                    batch_size=hp['batch_size_train'])
+            
+            input = torch.from_numpy(trial.x).to(device)
+            target = torch.from_numpy(trial.y).to(device)
+
+            # Continual learning with intelligent synapses
+            v_prev = v_current
+
+            output = model(input)
+            if hp['loss_type'] == 'lsq':
+                output = torch.sigmoid(output)
+
+            #TODO: 这里tmpsum会特别靠近0，是为什么
+            # tmpsum = output[-1,:,1:].detach().cpu().numpy().sum(axis=-1).mean()
+            # print(f'mean_tmpsum: {tmpsum:.4f}')
+
+            # Update cost 
+            cost_reg = 0.
+            now_v = get_current_param_list(model, clone=False)
+            
+            for v, w, v_val in zip(now_v, Omega0, v_anc0):
+                cost_reg += c * torch.sum(
+                    w.detach() * (v - v_val.detach())**2)
+
+            loss = criterion(output, target) + cost_reg
+            loss_list.append(loss.item())
+            
+            optimizer.zero_grad()
+            loss.backward()
+
+            # get the grad
+            v_grad = []
+            for _, param in model.named_parameters():
+                v_grad.append(param.grad)
+
+            optimizer.step()
+
+            v_current = get_current_param_list(model)
+
+            # Update synaptic importance
+            omega0 = [
+                o - (v_c - v_p) * v_g for o, v_c, v_p, v_g in
+                zip(omega0, v_current, v_prev, v_grad)
+            ]
+
+            step += 1
+            if step % 500 == 0:
+                num_steps = step * hp['batch_size_train']
+                print(f'Step [{num_steps}/{rule_train_iters[i_rule_train]}], Loss: {sum(loss_list):.4f}')
+                log = do_eval(model, log, rule_train=rule_train)
+                loss_list = []
+        
+        log_plot(log, savename=save_name)
+        
+    print("Optimization finished!")
+
+if __name__ == '__main__':
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    seed = 2024
+    lock_random_seed(seed=seed)
+    rule_trains = None
+    hp = {'activation': 'softplus', 'w_rec_init': 'diag'}
+    rule_prob_map = {'contextdm1': 5, 'contextdm2': 5}
+    train(ruleset='all', device=device, seed=seed, max_steps=3e6, hp=hp, \
+           rule_prob_map=rule_prob_map, rule_trains=rule_trains)
+    
+    hp = dict()
+    hp['w_rec_init'] = 'randortho'
+    hp['easy_task'] = True
+    hp['activation'] = 'softplus'
+    # hp['activation'] = 'relu' #目前relu还是会有问题
+    hp['c_intsyn'] = 0.0
+    hp['ksi_intsyn'] = 0.01
+    hp['max_steps'] = 4e5
+
+    rule_trains = [['fdgo'], ['delaygo'], ['dm1', 'dm2'], ['multidm'],
+                   ['contextdm1', 'contextdm2']]
+    train_sequential(ruleset='all', device=device, rule_trains=rule_trains,\
+                      hp=hp, max_steps=hp['max_steps'], save_name='sequential.jpg')
+    
+
+    hp['c_intsyn'] = 1.0
+    train_sequential(ruleset='all', device=device, rule_trains=rule_trains,\
+                      hp=hp, max_steps=hp['max_steps'], save_name='continual_learning.jpg')
