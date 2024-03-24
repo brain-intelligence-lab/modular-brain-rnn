@@ -7,10 +7,10 @@ import torch.nn as nn
 import numpy as np
 import time
 import random
-from spatially_embed.node_distance import sphere_distance
-from spatially_embed.loss_function import SpatiallyLoss
-from spatially_embed.neurogym_dataset import create_dataset
-from spatially_embed.spiking_model import SNN, LIFNeuron
+from functions.spatially_embed.node_distance import sphere_distance
+from functions.utils.loss_function import SpatiallyLoss
+from datasets.neurogym_dataset import create_dataset
+from models.spiking_model import SNN, LIFNeuron
 
 def seed_all(seed=1029, benchmark=False):
     random.seed(seed)

@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import numpy as np
 import networkx as nx
 import bct
-from generative_network_modelling import bct_gpu
+from functions.generative_network_modelling import bct_gpu
 # import bct_gpu
 import torch
 

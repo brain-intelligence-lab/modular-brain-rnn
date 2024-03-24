@@ -1,6 +1,4 @@
 import numpy as np
-import torch
-import torch.nn as nn
 import matplotlib.pyplot as plt
 
 def node_plot(node_coordinate, modularity_cluster, group_num=3, cmap='tab10'):

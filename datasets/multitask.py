@@ -1685,7 +1685,7 @@ def get_default_hp(ruleset):
             # number of output units
             'n_output': n_output,
             # number of recurrent units
-            'n_rnn': 256,
+            'n_rnn': 84,
             # number of input units
             'ruleset': ruleset,
             # name to save
@@ -1695,6 +1695,8 @@ def get_default_hp(ruleset):
             # intelligent synapses parameters, tuple (c, ksi)
             'c_intsyn': 0,
             'ksi_intsyn': 0,
-            }
+            # 是否使用snn
+            'use_snn': False,
+        }
 
     return hp
