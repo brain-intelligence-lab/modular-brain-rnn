@@ -305,6 +305,8 @@ def estimate_fisher(model, rule_train, n_trials, ewc_gamma=1.):
 
         # Run forward pass of model
         output = model(input)
+
+        output = torch.sigmoid(output)
         
         # Calculate the MSE loss for this output
         mse_loss = criterion(output, target)
@@ -339,25 +341,26 @@ def estimate_fisher(model, rule_train, n_trials, ewc_gamma=1.):
     model.train(mode=mode)
 
 
-def train_sequential_ewc(ruleset, device, rule_trains, exp_name, hp=None, max_trials=1e4, seed=2024, ckpt=None):
+def train_sequential_ewc(ruleset, device, rule_trains, args, hp=None):
 
-    writer = SummaryWriter(comment=exp_name)
+    writer = SummaryWriter(comment=args.exp_name)
     
     default_hp = task.get_default_hp(ruleset)
     if hp is not None:
         default_hp.update(hp)
     hp = default_hp
-    hp['seed'] = seed
-    hp['rng'] = np.random.RandomState(seed)
+    hp['seed'] = args.seed
+    hp['rng'] = np.random.RandomState(args.seed)
     hp['rule_trains'] = rule_trains
     hp['rules'] = [r for rs in rule_trains for r in rs]
 
     # Number of training iterations for each rule
-    rule_train_iters = [len(r)*max_trials for r in rule_trains]
+    rule_train_iters = [len(r)*args.max_trials for r in rule_trains]
+    # rule_train_iters[-1] *= 20
 
-    model = RNN(hp=hp, device=device).to(device)
-    if ckpt:
-        model = torch.load(ckpt, map_location=device)
+    model = RNN(hp=hp, device=device, rec_scale_factor=args.rec_scale_factor).to(device)
+    if args.load_model:
+        model = torch.load(args.load_model, map_location=device)
 
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=hp['learning_rate'])
@@ -437,43 +440,64 @@ def train_sequential_ewc(ruleset, device, rule_trains, exp_name, hp=None, max_tr
                 for list_name, perf_list in log.items():
                     if not 'min' in list_name and not 'avg' in list_name:
                         writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=global_step)
-                c = hp['c_intsyn']
+
                 loss_list = []
                 fc_list = []
-        estimate_fisher(model, rule_train, 200, 0.90)
+        estimate_fisher(model, rule_train, args.fisher_samples * len(rule_train), args.ewc_gamma)
         last_trained_rules = "_".join(rule_train)
         torch.save(model, f'./runs/rnn_{last_trained_rules}_trained.pth')
-
     
     writer.close()
     print("Optimization finished!")
 
 
+def start_parse():
+    import argparse
+    parser = argparse.ArgumentParser(description='interactive_modelling')
+    parser.add_argument('--n_rnn', default=84, type=int)
+    parser.add_argument('--gpu', default=1, type=int)
+    parser.add_argument('--seed', default=2024)
+    parser.add_argument('--exp_name', type=str)
+    parser.add_argument('--max_trials', default=4e5, type=int)
+    parser.add_argument('--fisher_samples', default=200, type=int)
+    parser.add_argument('--rec_scale_factor', default=1.0, type=float)
+    parser.add_argument('--reg_factor', default=1000.0, type=float)
+    parser.add_argument('--ewc_gamma', default=1.0, type=float)
+    parser.add_argument('--load_model', type=str)
+    parser.add_argument('--use_ewc', action='store_true')
+    parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu'], default='softplus')
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == '__main__':
-    device = torch.device('cuda:7' if torch.cuda.is_available() else 'cpu')
-    seed = 2024
-    lock_random_seed(seed=seed)
+    args = start_parse()
+
+    args.exp_name = ", ".join(f"{arg}={getattr(args, arg)}" for arg in vars(args))
+    
+    device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')
+    lock_random_seed(seed=args.seed)
     
     hp = dict()
-    hp['n_rnn'] = 84
-    hp['w_rec_init'] = 'randortho'
+    hp['n_rnn'] = args.n_rnn
     hp['easy_task'] = True
-    hp['activation'] = 'softplus'
-    # hp['activation'] = 'relu' # TODO:目前relu还是会有问题
-    hp['c_intsyn'] = 0.0
+    hp['learning_rate'] = 1e-3
+    # hp['w_rec_init'] = 'randortho'
+    # hp['w_rec_init'] = 'diag'
+    # hp['activation'] = 'relu' # TODO:relu会有梯度爆炸的问题
+    hp['activation'] = args.non_linearity
+    hp['c_intsyn'] = args.reg_factor
     hp['ksi_intsyn'] = 1e-3
-    hp['max_trials'] = 4e5
 
-    # rule_trains = [['fdgo'], ['delaygo'], ['dm1', 'dm2'], ['multidm'],
-    #                ['contextdm1', 'contextdm2']]
-
-    rule_trains = [['dm1', 'dm2'], ['multidm'],
+    rule_trains = [['fdgo'], ['delaygo'], ['dm1', 'dm2'], ['multidm'],
                    ['contextdm1', 'contextdm2']]
     
-    # rule_trains = [['contextdm1', 'contextdm2']]
- 
-    # train_sequential(ruleset='all', device=device, rule_trains=rule_trains, \
-    #                   hp=hp, max_trials=hp['max_trials'], exp_name='sequential_training')
+    if args.use_ewc:
+        train_sequential_ewc(ruleset='all', device=device, rule_trains=rule_trains, \
+                          hp=hp, args=args)
+    else:
+        train_sequential(ruleset='all', device=device, rule_trains=rule_trains, \
+                        hp=hp, max_trials=args.max_trials, exp_name=f'train_sequential_{args.exp_name}')
 
     # exit()
     
@@ -483,10 +507,6 @@ if __name__ == '__main__':
     #                   hp=hp, max_trials=hp['max_trials'], exp_name='continual_learning')
     
     # exit()
-
-    hp['c_intsyn'] = 10.0
-    train_sequential_ewc(ruleset='all', device=device, rule_trains=rule_trains, \
-                      hp=hp, max_trials=hp['max_trials'], exp_name='continual_learning_ewc')
     
     # rule_trains = ['fdgo', 'delaygo', 'dm1', 'dm2', 'multidm',
     #                'contextdm1', 'contextdm2']
