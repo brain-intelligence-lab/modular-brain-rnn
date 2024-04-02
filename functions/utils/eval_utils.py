@@ -113,6 +113,7 @@ def do_eval(model, log, rule_train):
                 if hp['loss_type'] == 'lsq' and not hp['use_snn']:
                     y_hat_test = torch.sigmoid(y_hat_test).cpu().numpy()
                 else:
+                    y_hat_test = torch.nn.functional.softmax(y_hat_test, dim=-1)
                     y_hat_test = y_hat_test.cpu().numpy()
                 
                 # Cost is first summed over time,

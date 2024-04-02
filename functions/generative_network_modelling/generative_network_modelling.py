@@ -49,7 +49,7 @@ def ks_statistic_gpu(x1, x2, device):
 
 
 
-def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, Fc=None):
+def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, Fc=None, undirected=True):
     eta, gam, epsilon = params
     if use_matching:
         Kseed, _, _ = bct_gpu.matching_ind_gpu(A, device=device)
@@ -66,7 +66,7 @@ def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, 
     # compute the parameterized costs and values for wiring
     if D is not None:
         if mv1 == 'powerlaw':
-            Fd = D**eta
+            Fd = (D + epsilon )**eta
         elif mv1 == 'exponential':
             Fd = np.exp(eta * D)
     if use_matching:
@@ -80,20 +80,25 @@ def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, 
     if Fc is not None:
         Ff = Ff * (Fc + epsilon)
     
-    
-    u_indx, v_indx = np.where(np.triu(np.ones((n, n)), k=1))  # compute indices
+    if undirected:
+        u_indx, v_indx = np.where(np.triu(np.ones((n, n)), k=1))  # compute indices
+    else:
+        u_indx, v_indx = np.where(np.ones((n, n)))  # compute indices
     
     indx = u_indx  * n + v_indx
     P = Ff.flatten()[indx]  # get the probability vector
 
     # add connection
     C = np.concatenate([np.array([0]), np.cumsum(P)])
-    r = np.sum(np.random.rand() * C[-1] >= C) - 1
+    rand_value = np.random.rand()
+    r = np.sum(rand_value * C[-1] >= C) - 1
     uu = u_indx[r]
     vv = v_indx[r]
-    A[uu, vv] = 1
-    A[vv, uu] = 1
-        
+    if undirected:
+        A[uu, vv] = 1
+        A[vv, uu] = 1
+    else:
+        A[uu, vv] = 1
     return A
 
 # conn_matrices是connection_num个依次生成的conn_matrix

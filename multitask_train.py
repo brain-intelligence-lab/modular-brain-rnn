@@ -1,18 +1,20 @@
 import torch
-import torch.nn as nn
 import datasets.multitask as task
 from models.recurrent_models import RNN
 from functions.utils.eval_utils import do_eval, lock_random_seed
+from functions.generative_network_modelling.generative_network_modelling import Gen_one_connection
 from collections import defaultdict
 import torch.nn.functional as F
 import numpy as np
+import argparse
 import pdb
 from torch.utils.tensorboard import SummaryWriter
 import bct
 
+
 # https://github.com/gyyang/multitask/blob/master/train.py
             
-def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_prob_map=None, rule_trains=None):
+def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_prob_map=None, rule_trains=None, rec_scale_factor=1.0):
     writer = SummaryWriter(comment=exp_name)
     
     default_hp = task.get_default_hp(ruleset)
@@ -21,9 +23,10 @@ def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_pr
     hp = default_hp
     hp['seed'] = seed
     hp['rng'] = np.random.RandomState(seed)
-    hp['rule_trains'] = task.rules_dict[ruleset]
-    if rule_trains is not None:
-        hp['rule_trains'] = rule_trains
+    if hp['rule_trains'] is None:
+        hp['rule_trains'] = task.rules_dict[ruleset]
+        if rule_trains is not None:
+            hp['rule_trains'] = rule_trains
     hp['rules'] = hp['rule_trains']
 
     # Assign probabilities for rule_trains.
@@ -37,10 +40,9 @@ def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_pr
                 [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
         hp['rule_probs'] = list(rule_prob/np.sum(rule_prob))
 
-    model = RNN(hp=hp, device=device).to(device)
+    model = RNN(hp=hp, device=device, rec_scale_factor=rec_scale_factor).to(device)
 
     step = 0
-    criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_list = []
     log = defaultdict(list)
@@ -58,20 +60,33 @@ def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_pr
         
         input = torch.from_numpy(trial.x).to(device)
         target = torch.from_numpy(trial.y).to(device)
+        c_mask = torch.from_numpy(trial.c_mask).to(device)
+
+        if torch.numel(c_mask) == torch.numel(target):
+            c_mask = c_mask.reshape(target.shape[0], target.shape[1], -1)
 
         output, hidden_states = model(input)
-        if hp['loss_type'] == 'lsq' and not hp['use_snn']:
+        if hp['loss_type'] == 'lsq':
             output = torch.sigmoid(output)
+            loss = torch.mean(torch.square((target - output) * c_mask))
+        else:
+            _, _, n_output = target.shape
+            target = target.view(-1, n_output)
+            output = output.view(-1, n_output)
+           
+            loss = F.cross_entropy(output, target, reduction='none')      
+            loss = torch.mean(loss * c_mask)
 
         #TODO: 这里tmpsum会特别靠近0，是为什么
         # tmpsum = output[-1,:,1:].detach().cpu().numpy().sum(axis=-1).mean()
         # print(f'mean_tmpsum: {tmpsum:.4f}')
         
+        random_value = torch.rand_like(hidden_states) 
+        hidden_states =  hidden_states + random_value * 1e-7
         hidden_states_mean = hidden_states.detach().mean(1).cpu().numpy()
         fc = np.corrcoef(hidden_states_mean, rowvar=False)
         fc_list.append(fc)
 
-        loss = criterion(output, target)
         loss_list.append(loss.item())
         
         optimizer.zero_grad()
@@ -83,7 +98,9 @@ def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_pr
             num_steps = step * hp['batch_size_train']
             
             weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
-            _, sc_qvalue = bct.modularity_dir(np.abs(weight))
+            ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
+
+            writer.add_scalar(tag = 'Cluster_Num', scalar_value = ci.max(), global_step = step)
             
             writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = step)
             
@@ -107,17 +124,18 @@ def train(ruleset, device, exp_name, hp=None, max_trials=3e6, seed=2024, rule_pr
                 if not 'min' in list_name and not 'avg' in list_name:
                     writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=step)
             
-            torch.save(model, f'./runs/rnn_interleaved.pth')
+            # torch.save(model, f'./runs/rnn_interleaved.pth')
             
             loss_list = []
             fc_list = []
 
     print("Optimization finished!")
 
-# https://github.com/gyyang/multitask/blob/master/train.py
-    
 
-def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials=1e4, seed=2024):
+
+# https://github.com/gyyang/multitask/blob/master/train.py
+
+def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials=1e4, seed=2024, rec_scale_factor=1.0):
     '''Train the network sequentially.
 
     Args:
@@ -140,7 +158,7 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
     # Number of training iterations for each rule
     rule_train_iters = [len(r)*max_trials for r in rule_trains]
 
-    model = RNN(hp=hp, device=device).to(device)
+    model = RNN(hp=hp, device=device, rec_scale_factor=rec_scale_factor).to(device)
 
     def get_current_param_list(model, clone=True):
         v_list = []
@@ -154,11 +172,20 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
     # Using continual learning or not
     c, ksi = hp['c_intsyn'], hp['ksi_intsyn']
 
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=hp['learning_rate'])
     loss_list = []
     log = defaultdict(list)
     global_step = 0
+    
+    # eta = -3.2
+    # gamma = 0.38
+    # params = [eta, gamma, 1e-5]
+    # modelvar = ['powerlaw', 'powerlaw']
+    
+    # mask = np.zeros((hp['n_rnn'], hp['n_rnn']), dtype=np.float32)
+    # now_total_num = 0
+    # model.set_mask(torch.tensor(mask))
 
     for i_rule_train, rule_train in enumerate(hp['rule_trains']):
         step = 0
@@ -197,6 +224,9 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
             
             input = torch.from_numpy(trial.x).to(device)
             target = torch.from_numpy(trial.y).to(device)
+            c_mask = torch.from_numpy(trial.c_mask).to(device)
+            if torch.numel(c_mask) == torch.numel(target):
+                c_mask = c_mask.reshape(target.shape[0], target.shape[1], -1)
 
             # Continual learning with intelligent synapses
             v_prev = v_current
@@ -206,6 +236,8 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
             if hp['loss_type'] == 'lsq' and not hp['use_snn']:
                 output = torch.sigmoid(output)
             
+            random_value = torch.rand_like(hidden_states) 
+            hidden_states =  hidden_states + random_value * 1e-7
             hidden_states_mean = hidden_states.detach().mean(1).cpu().numpy()
             fc = np.corrcoef(hidden_states_mean, rowvar=False)
             fc_list.append(fc)
@@ -219,7 +251,8 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
                 cost_reg += c * torch.sum(
                     w.detach() * (v - v_val.detach())**2)
 
-            loss = criterion(output, target) + cost_reg
+            # loss = criterion(output, target) + cost_reg
+            loss = torch.mean(torch.square((target - output) * c_mask)) + cost_reg
             loss_list.append(loss.item())
             
             optimizer.zero_grad()
@@ -244,11 +277,12 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
             global_step +=1
             if step % 500 == 0:
                 num_trails = step * hp['batch_size_train']
-
                 print(f'Step [{num_trails}/{rule_train_iters[i_rule_train]}], Loss: {sum(loss_list):.4f}')
 
                 weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
-                _, sc_qvalue = bct.modularity_dir(np.abs(weight))
+                ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
+
+                writer.add_scalar(tag = 'Cluster_Num', scalar_value = ci.max(), global_step = global_step)
 
                 writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = global_step)
 
@@ -266,9 +300,19 @@ def train_sequential(ruleset, device, rule_trains, exp_name, hp=None, max_trials
                     if not 'min' in list_name and not 'avg' in list_name:
                         writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=global_step)
                 
-                torch.save(model, f'./runs/rnn_cintsyn={c}.pth')
+                # torch.save(model, f'./runs/rnn_cintsyn={c}.pth')
                 loss_list = []
                 fc_list = []
+
+                # add_conn_num = 10
+                # add_conn_num = min(add_conn_num, (hp['n_rnn']**2) - now_total_num )
+                
+                # for _ in range(add_conn_num):
+                #     mask = Gen_one_connection(mask, params, modelvar, Fc=None, device=device, undirected=False)
+                #     now_total_num += 1
+                
+                # model.set_mask(torch.tensor(mask))
+                # print(f'now_conn_num:{now_total_num}')
     
     writer.close()
     print("Optimization finished!")
@@ -288,7 +332,7 @@ def estimate_fisher(model, rule_train, n_trials, ewc_gamma=1.):
         est_fisher_info[n] = p.detach().clone().zero_()
 
     # Set model to evaluation mode
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
     mode = model.training
     model.eval()
 
@@ -302,6 +346,8 @@ def estimate_fisher(model, rule_train, n_trials, ewc_gamma=1.):
         
         input = torch.from_numpy(trial.x).to(device)
         target = torch.from_numpy(trial.y).to(device)
+        c_mask = torch.from_numpy(trial.c_mask).to(device)
+        c_mask = c_mask.reshape(input.shape[0], input.shape[1], -1)
 
         # Run forward pass of model
         output = model(input)
@@ -309,7 +355,8 @@ def estimate_fisher(model, rule_train, n_trials, ewc_gamma=1.):
         output = torch.sigmoid(output)
         
         # Calculate the MSE loss for this output
-        mse_loss = criterion(output, target)
+        # mse_loss = criterion(output, target)
+        mse_loss = torch.mean(torch.square((target - output) * c_mask))
         # mse_loss = F.mse_loss(output, target, reduction='sum')
         
         # Calculate gradient of MSE loss
@@ -362,7 +409,7 @@ def train_sequential_ewc(ruleset, device, rule_trains, args, hp=None):
     if args.load_model:
         model = torch.load(args.load_model, map_location=device)
 
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=hp['learning_rate'])
     loss_list = []
     log = defaultdict(list)
@@ -385,13 +432,18 @@ def train_sequential_ewc(ruleset, device, rule_trains, args, hp=None):
             
             input = torch.from_numpy(trial.x).to(device)
             target = torch.from_numpy(trial.y).to(device)
+            c_mask = torch.from_numpy(trial.c_mask).to(device)
+            c_mask = c_mask.reshape(input.shape[0], input.shape[1], -1)
 
             output, hidden_states = model(input)
 
             if hp['loss_type'] == 'lsq' and not hp['use_snn']:
                 output = torch.sigmoid(output)
-            
+    
+            random_value = torch.rand_like(hidden_states) 
+            hidden_states =  hidden_states + random_value * 1e-7
             hidden_states_mean = hidden_states.detach().mean(1).cpu().numpy()
+
             fc = np.corrcoef(hidden_states_mean, rowvar=False)
             fc_list.append(fc)  
 
@@ -407,7 +459,9 @@ def train_sequential_ewc(ruleset, device, rule_trains, args, hp=None):
                     ewc_losses.append((fisher * (p-mean)**2).sum())
                 ewc_loss = (1./2)*sum(ewc_losses)
 
-            loss = criterion(output, target) + hp['c_intsyn'] * ewc_loss
+            # loss = criterion(output, target) + hp['c_intsyn'] * ewc_loss
+            loss = torch.mean(torch.square((target - output) * c_mask)) + hp['c_intsyn'] * ewc_loss
+            
             loss_list.append(loss.item())
             
             optimizer.zero_grad()
@@ -423,7 +477,9 @@ def train_sequential_ewc(ruleset, device, rule_trains, args, hp=None):
                 print(f'Step [{num_trails}/{rule_train_iters[i_rule_train]}], Loss: {sum(loss_list):.4f}')
 
                 weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
-                _, sc_qvalue = bct.modularity_dir(np.abs(weight))
+                ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
+
+                writer.add_scalar(tag = 'Cluster_Num', scalar_value = ci.max(), global_step = global_step)
 
                 writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = global_step)
 
@@ -452,27 +508,28 @@ def train_sequential_ewc(ruleset, device, rule_trains, args, hp=None):
 
 
 def start_parse():
-    import argparse
     parser = argparse.ArgumentParser(description='interactive_modelling')
     parser.add_argument('--n_rnn', default=84, type=int)
     parser.add_argument('--gpu', default=1, type=int)
     parser.add_argument('--seed', default=2024)
     parser.add_argument('--exp_name', type=str)
     parser.add_argument('--max_trials', default=4e5, type=int)
-    parser.add_argument('--fisher_samples', default=200, type=int)
-    parser.add_argument('--rec_scale_factor', default=1.0, type=float)
+    parser.add_argument('--rec_scale_factor', default=0.5, type=float)
     parser.add_argument('--reg_factor', default=1000.0, type=float)
-    parser.add_argument('--ewc_gamma', default=1.0, type=float)
     parser.add_argument('--load_model', type=str)
+    parser.add_argument('--loss_type', choices=['lsq', 'ce'], default='lsq')
     parser.add_argument('--use_ewc', action='store_true')
-    parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu'], default='softplus')
+    parser.add_argument('--ksi', default=0.1, type=float)
+    parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu', 'leakyrelu'], default='softplus')
+    parser.add_argument('--easy_task', action='store_true')
+    parser.add_argument('--task_num', default=20, type=int)
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = start_parse()
-
+    
     args.exp_name = ", ".join(f"{arg}={getattr(args, arg)}" for arg in vars(args))
     
     device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')
@@ -480,36 +537,37 @@ if __name__ == '__main__':
     
     hp = dict()
     hp['n_rnn'] = args.n_rnn
-    hp['easy_task'] = True
+    hp['easy_task'] = args.easy_task
     hp['learning_rate'] = 1e-3
-    # hp['w_rec_init'] = 'randortho'
+    hp['w_rec_init'] = 'randortho'
     # hp['w_rec_init'] = 'diag'
-    # hp['activation'] = 'relu' # TODO:relu会有梯度爆炸的问题
     hp['activation'] = args.non_linearity
     hp['c_intsyn'] = args.reg_factor
-    hp['ksi_intsyn'] = 1e-3
-
-    rule_trains = [['fdgo'], ['delaygo'], ['dm1', 'dm2'], ['multidm'],
-                   ['contextdm1', 'contextdm2']]
+    hp['loss_type'] = args.loss_type
+    hp['ksi_intsyn'] = args.ksi
     
-    if args.use_ewc:
-        train_sequential_ewc(ruleset='all', device=device, rule_trains=rule_trains, \
-                          hp=hp, args=args)
+    if args.easy_task:
+
+        # rule_trains = [['fdgo'], ['delaygo'], ['dm1', 'dm2'], ['multidm'],
+        #             ['contextdm1', 'contextdm2']]
+
+        rule_trains = [['dm1', 'dm2'], ['delaydm1', 'delaydm2']]
+        
+
+        if args.use_ewc:
+            train_sequential_ewc(ruleset='all', device=device, rule_trains=rule_trains, \
+                            hp=hp, args=args)
+        else:
+            train_sequential(ruleset='all', device=device, rule_trains=rule_trains, \
+                            hp=hp, max_trials=args.max_trials, \
+                            exp_name=f'train_sequential_{args.exp_name}', rec_scale_factor=args.rec_scale_factor)
     else:
-        train_sequential(ruleset='all', device=device, rule_trains=rule_trains, \
-                        hp=hp, max_trials=args.max_trials, exp_name=f'train_sequential_{args.exp_name}')
 
-    # exit()
-    
-    # enable continual learning
-    # hp['c_intsyn'] = 0.01
-    # train_sequential(ruleset='all', device=device, rule_trains=rule_trains, \
-    #                   hp=hp, max_trials=hp['max_trials'], exp_name='continual_learning')
-    
-    # exit()
-    
-    # rule_trains = ['fdgo', 'delaygo', 'dm1', 'dm2', 'multidm',
-    #                'contextdm1', 'contextdm2']
-    
-    # train(ruleset='all', device=device, exp_name='interleaved_learing', \
-    #     seed=seed, max_trials=2800*1000, hp=hp, rule_trains=rule_trains)
+        rule_prob_map = {'contextdm1': 5, 'contextdm2': 5}
+
+        hp['rule_trains'] = task.rules_dict['all']
+        hp['rule_trains'] = hp['rule_trains'][:args.task_num]
+        hp['rules'] = hp['rule_trains']
+
+        train(ruleset='all', device=device, exp_name=args.exp_name, rule_prob_map=rule_prob_map, \
+            seed=args.seed, max_trials=args.max_trials, hp=hp, rec_scale_factor=args.rec_scale_factor)

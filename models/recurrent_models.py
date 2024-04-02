@@ -58,7 +58,8 @@ class RNN(nn.Module):
         self.recurrent_conn = nn.Linear(hidden_size, hidden_size)
         
         if hp['w_rec_init'] == 'randortho':
-            self.recurrent_conn.weight.data = torch.tensor(gen_ortho_matrix(hidden_size, hp['rng']), dtype=torch.float32)
+            nn.init.orthogonal_(self.recurrent_conn.weight)
+            # self.recurrent_conn.weight.data = torch.tensor(gen_ortho_matrix(hidden_size, hp['rng']), dtype=torch.float32)
         elif hp['w_rec_init'] == 'diag':
             self.recurrent_conn.weight.data = torch.eye(hidden_size, dtype=torch.float32)
         
@@ -66,13 +67,15 @@ class RNN(nn.Module):
         self.recurrent_conn.weight.data *= self.rec_scale_factor
         self.readout = nn.Linear(hidden_size, n_output)
                 
-        # TODO:这里使用relu训不上去，训到后面会出现nan
+    
         if hp['activation'] == 'softplus':
             self.rnn_activation = nn.Softplus()
         elif hp['activation'] == 'relu':
             self.rnn_activation = nn.ReLU() 
         elif hp['activation'] == 'tanh':
             self.rnn_activation = nn.Tanh()
+        elif hp['activation'] == 'leakyrelu':
+            self.rnn_activation = nn.LeakyReLU()
             
         self.device = device
 
