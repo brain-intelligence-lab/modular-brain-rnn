@@ -6,3 +6,5 @@
 *.npy
 *.html
 *.pth
+*runs
+*.sh

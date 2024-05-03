@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import datasets.multitask as task
+from collections import defaultdict
 import random
 import os
 
@@ -88,14 +89,14 @@ def get_perf(y_hat, y_loc):
     perf = should_fix * fixating + (1-should_fix) * corr_loc * (1-fixating)
     return perf
 
-def do_eval(model, log, rule_train):
+def do_eval(model, rule_train):
     """Do evaluation.
 
     Args:
         model: Model class instance
-        log: dictionary that stores the log
         rule_train: string or list of strings, the rules being trained
     """
+    log = defaultdict(list)
     hp = model.hp
     device = next(model.parameters()).device
     model.eval()
