@@ -78,19 +78,10 @@ class RNN(nn.Module):
         n = self.hp['n_rnn']
         mask = np.zeros((n, n), dtype=np.float32) 
         
-        Dis = None
-        if self.hp['wiring_rule'] in ['dis_rand', 'distance']:
-            assert self.hp['n_rnn'] == 84
-            Dis = np.load('/data_nv/dataset/brain_hcp_data/84/Raw_dis.npy')
-        
         conn_num = self.hp['conn_num']
         mask_list = [mask.copy() for i in range(conn_num + 1)]
         for i in range(1, conn_num + 1):
-            if self.hp['wiring_rule'] == 'dis_rand' \
-                and np.random.random() < random_prob:
-                mask_list[i] = Gen_one_connection(mask_list[i-1].copy(), params, modelvar, D=None, device=self.device, undirected=False)
-            else:
-                mask_list[i] = Gen_one_connection(mask_list[i-1].copy(), params, modelvar, D=Dis, device=self.device, undirected=False)
+            mask_list[i] = Gen_one_connection(mask_list[i-1].copy(), params, modelvar, D=None, device=self.device, undirected=False)
         
         self.mask_list = mask_list
         self.mask_idx = 0
@@ -100,23 +91,23 @@ class RNN(nn.Module):
         # assert self.mask_idx <= self.hp['conn_num'] 
         self.mask_idx = min(self.mask_idx, self.hp['conn_num'])
     
-    def gen_mask_for_control(self):
-        conn_num = self.mask_idx
-        eta = -3.2
-        gamma = 0.38
-        params = [eta, gamma, 1e-5]
-        modelvar = ['powerlaw', 'powerlaw']
+    # def gen_mask_for_control(self):
+    #     conn_num = self.mask_idx
+    #     eta = -3.2
+    #     gamma = 0.38
+    #     params = [eta, gamma, 1e-5]
+    #     modelvar = ['powerlaw', 'powerlaw']
         
-        n = self.hp['n_rnn']
-        mask = np.zeros((n, n), dtype=np.float32) 
-        for i in range(conn_num):
-            mask = Gen_one_connection(mask, params, modelvar, D=None, device=self.device, undirected=False)
+    #     n = self.hp['n_rnn']
+    #     mask = np.zeros((n, n), dtype=np.float32) 
+    #     for i in range(conn_num):
+    #         mask = Gen_one_connection(mask, params, modelvar, D=None, device=self.device, undirected=False)
         
-        assert mask.sum() == conn_num
-        mask = torch.tensor(mask).to(self.device)
-        # 应用掩码矩阵
-        with torch.no_grad():
-            self.recurrent_conn.weight.grad *= mask
+    #     assert mask.sum() == conn_num
+    #     mask = torch.tensor(mask).to(self.device)
+    #     # 应用掩码矩阵
+    #     with torch.no_grad():
+    #         self.recurrent_conn.weight.grad *= mask
             
     def grow_connections(self, add_conn_num):
         self.update_conn_num(add_conn_num)

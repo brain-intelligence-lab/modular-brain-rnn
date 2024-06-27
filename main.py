@@ -16,7 +16,7 @@ def start_parse():
     parser.add_argument('--display_step', default=500, type=int)
     parser.add_argument('--max_trials', default=3e6, type=int)
     parser.add_argument('--max_steps_per_stage', default=500, type=int)
-    parser.add_argument('--add_conn_per_stage', default=10, type=int)
+    parser.add_argument('--add_conn_per_stage', default=0, type=int)
     parser.add_argument('--rec_scale_factor', default=0.5, type=float)
     parser.add_argument('--reg_factor', default=1.0, type=float)
     parser.add_argument('--load_model', type=str)
@@ -30,6 +30,7 @@ def start_parse():
     parser.add_argument('--save_model', action='store_true')
     parser.add_argument('--continual_learning', action='store_true')
     parser.add_argument('--task_num', default=20, type=int)
+    parser.add_argument('--task_list', nargs='+', help='A list of tasks', default=None)
     args = parser.parse_args()
     return args
 

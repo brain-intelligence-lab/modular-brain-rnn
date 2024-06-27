@@ -25,10 +25,14 @@ def gen_hp(args):
         
         hp['easy_task'] = True
     else:
-        # hp['w_rec_init'] = 'diag'
-        hp['rule_trains'] = task.rules_dict[args.rule_set]
-        hp['rule_trains'] = hp['rule_trains'][:args.task_num]
-        hp['rules'] = hp['rule_trains']
+        if args.task_list is None:
+            hp['rule_trains'] = task.rules_dict[args.rule_set]
+            hp['rule_trains'] = hp['rule_trains'][:args.task_num]
+            hp['rules'] = hp['rule_trains']
+        else:
+            assert set(args.task_list) <= set(task.rules_dict[args.rule_set]), "Invalid task_list!"
+            hp['rule_trains'] = args.task_list
+            hp['rules'] = hp['rule_trains']
     
     hp['wiring_rule'] = args.wiring_rule
     hp['conn_num'] = args.conn_num
@@ -116,8 +120,8 @@ def train(args, writer:SummaryWriter):
         optimizer.zero_grad()
         loss.backward()
         
-        if conn_mode == 'fix':
-            model.gen_mask_for_control()
+        # if conn_mode == 'fix' and args.add_conn_per_stage > 0:
+        #     model.gen_mask_for_control()
     
         optimizer.step()
         
