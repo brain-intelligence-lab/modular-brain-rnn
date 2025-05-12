@@ -9,12 +9,12 @@ cleanup() {
 
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
-n_rnns=(10 15 20 25 30 64 128)
+n_rnns=(4 8 16 32 64)
 gpus=(0 1 2 3 4 5 6 7)
 
 num_of_gpus=${#gpus[@]}
-# seeds=(100 200 300 400 500 600 700 800 900 1000)
-seeds=(1100 1200 1300 1400 1500 1600 1700 1800 1900 2000)
+seeds=(100 200 300 400 500 600 700 800 900 1000)
+# seeds=(1100 1200 1300 1400 1500 1600 1700 1800 1900 2000)
 
 task_num_list=(3 6 11 16 20)
 
@@ -36,6 +36,7 @@ for n_rnn in "${n_rnns[@]}"; do
                 --seed $seed \
                 --log_dir $log_dir \
                 --non_linearity relu \
+                --save_model \
                 --max_trials 3000000 &
             let index+=1
             let index%=num_of_gpus

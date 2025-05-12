@@ -10,8 +10,8 @@ cleanup() {
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
 
-n_rnns=(10 15 20 25 30 64)
-gpus=(0 1 2 3)
+n_rnns=(8 16 32 64)
+gpus=(0 1 2 3 4 5 6 7)
 
 num_of_gpus=${#gpus[@]}
 seeds=(100 200 300 400 500 600 700 800 900 1000)

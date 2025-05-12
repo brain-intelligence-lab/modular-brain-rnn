@@ -21,8 +21,8 @@ def start_parse():
     parser.add_argument('--reg_factor', default=1.0, type=float)
     parser.add_argument('--load_model', type=str)
     parser.add_argument('--conn_num', type=int, default=-1)
-    parser.add_argument('--conn_mode',choices=['fix', 'grow', 'full'], default='full')
-    parser.add_argument('--wiring_rule', choices=['distance', 'dis_rand', 'random'])
+    parser.add_argument('--conn_mode',choices=['fixed', 'grow', 'full'], default='full')
+    parser.add_argument('--wiring_rule', choices=['distance', 'random'], default='distance')
     parser.add_argument('--loss_type', choices=['lsq', 'ce'], default='lsq')
     parser.add_argument('--ksi', default=0.1, type=float)
     parser.add_argument('--rule_set', choices=['all', 'mante', 'oicdmc'], default='all')
@@ -31,6 +31,9 @@ def start_parse():
     parser.add_argument('--continual_learning', action='store_true')
     parser.add_argument('--task_num', default=20, type=int)
     parser.add_argument('--task_list', nargs='+', help='A list of tasks', default=None)
+    parser.add_argument('--module_size_list', nargs='+', help='A list of module size', default=None)
+    parser.add_argument('--reg_term', action='store_true')
+    parser.add_argument('--easy_task', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -39,6 +42,12 @@ if __name__ == '__main__':
     lock_random_seed(seed=args.seed)
     assert args.conn_mode =='full' or args.conn_num != -1
     
+    if args.module_size_list is not None:
+        args.module_size_list = list(map(int, args.module_size_list))
+        assert sum(x for x in args.module_size_list) <= args.n_rnn
+        assert sum(x ** 2 for x in args.module_size_list) <= args.conn_num
+        
+        
     writer = SummaryWriter(log_dir=args.log_dir)
     log_dir = writer.logdir
     device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')
@@ -53,15 +62,19 @@ if __name__ == '__main__':
             f.write(f'{arg}: {value}\n')
             
     if args.continual_learning:
+        if args.task_list is None:
+            rule_trains = [['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti',],
+                           ['dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo',],
+                           ['dm1', 'dm2', 'contextdm1', 'contextdm2', 'multidm',],
+                           ['delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm'],
+                           ]
+        else:
+            rule_trains = [[task] for task in args.task_list]
 
-        rule_trains = [['fdgo'], ['delaygo'], ['dm1', 'dm2'], ['multidm'],
-                    ['contextdm1', 'contextdm2']]
-        
         # rule_trains = [['dm1', 'dm2'], ['delaydm1', 'delaydm2']]
         train_sequential(args, writer=writer, rule_trains=rule_trains)
     else:
 
-        rule_prob_map = {'contextdm1': 5, 'contextdm2': 5}
         train(args, writer=writer)
     
     writer.close()
