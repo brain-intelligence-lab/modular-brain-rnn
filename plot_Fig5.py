@@ -17,7 +17,7 @@ import glob
 import os
 import pdb
 
-fonts_path = '/home/wyuhang/.conda/myfonts'
+fonts_path = '~/.conda/myfonts'
 font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
 
 for file in font_files:
@@ -189,10 +189,10 @@ def get_hidden_states(model):
     return hidden_states_list
 
 def pre_process(load_step):
-    subjects_conn_data = scipy.io.loadmat('/data_smr/dataset/brain_hcp_data/84/structureM_use.mat')['structureM_use']
+    subjects_conn_data = scipy.io.loadmat('./datasets/brain_hcp_data/84/structureM_use.mat')['structureM_use']
     subjects_conn_data = np.transpose(subjects_conn_data, [2, 0, 1])
     subjects_conn_data = subjects_conn_data.astype(np.float32)
-    Distance = np.load('/data_smr/dataset/brain_hcp_data/84/Raw_dis.npy')
+    Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
 
     seeds_list = [ i for i in range(1, 2)]
     B = []

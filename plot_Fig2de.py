@@ -7,7 +7,7 @@ from matplotlib import font_manager
 import matplotlib.cm as cm
 import os
 
-fonts_path = '/home/wyuhang/.conda/myfonts'
+fonts_path = '~/.conda/myfonts'
 font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
 
 for file in font_files:

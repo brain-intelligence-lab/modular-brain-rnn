@@ -12,7 +12,7 @@ import os
 import seaborn as sns
 import pandas as pd
 
-fonts_path = '/home/wyuhang/.conda/myfonts'
+fonts_path = '~/.conda/myfonts'
 font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
 
 for file in font_files:
