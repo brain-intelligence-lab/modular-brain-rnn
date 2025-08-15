@@ -2,8 +2,6 @@
 *.png
 *.jpg
 .gitignore
-*.mat
-*.npy
 *.html
 *.pth
 *runs
