@@ -4,13 +4,10 @@ from models.recurrent_models import RNN
 from functions.utils.eval_utils import do_eval
 import torch.nn.functional as F
 import numpy as np
-import warnings
-warnings.filterwarnings("ignore", category=np.VisibleDeprecationWarning) 
 from collections import Counter
 import os
 from tensorboardX import SummaryWriter
 import bct
-import scipy.io
 import pdb
 
 hidden_states = None

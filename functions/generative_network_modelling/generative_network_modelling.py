@@ -1,7 +1,4 @@
 import numpy as np
-import plotly.graph_objects as go
-import numpy as np
-import networkx as nx
 import bct
 from functions.generative_network_modelling import bct_gpu
 # import bct_gpu
@@ -139,86 +136,6 @@ def get_ks_list(conn_matrices, y_target, D, device, ifprint=False):
     return ks_list, energy_list
 
 
-
-# 计算节点大小的函数
-
-def calculate_node_sizes(G, min_size=5, max_size=15):
-    degrees = np.array([degree for _, degree in G.degree()])
-    # 归一化度数到指定的大小范围
-    return min_size + (max_size - min_size) * (degrees - degrees.min()) / (degrees.max() - degrees.min())
-
-
-
-# 绘制brain的M条connection的一条一条生成的动画过程
-# (conn_matrices是N*N*M的形状， coordinates是N*3的形状)
-
-def plot_conn_generation(conn_matrices, coordinates, html_dir='result.html'):
-    m = conn_matrices.shape[2]
-    # 为了创建动画，我们需要先收集所有帧的数据
-    frames = []
-
-    for i in range(m):
-        x = conn_matrices[:, :, i]
-        G = nx.Graph(x)
-
-        # 计算节点大小
-        node_sizes = calculate_node_sizes(G)
-
-        edge_x = []
-        edge_y = []
-        edge_z = []
-        for edge in G.edges():
-            x0, y0, z0 = coordinates[edge[0]]
-            x1, y1, z1 = coordinates[edge[1]]
-            edge_x.extend([x0, x1, None])
-            edge_y.extend([y0, y1, None])
-            edge_z.extend([z0, z1, None])
-
-        node_x = []
-        node_y = []
-        node_z = []
-        for node in G.nodes():
-            x, y, z = coordinates[node]
-            node_x.append(x)
-            node_y.append(y)
-            node_z.append(z)
-
-        trace_edges = go.Scatter3d(x=edge_x, y=edge_y, z=edge_z, mode='lines', line=dict(color='grey', width=2))
-
-        trace_nodes = go.Scatter3d(x=node_x, y=node_y, z=node_z, mode='markers', marker=dict(size=node_sizes, color='skyblue', 
-                opacity=0.8,  # 增加透明度以增强立体感
-                line=dict(color='black', width=0.5)  # 给节点添加黑色边框
-            )
-        )
-
-        frames.append(go.Frame(data=[trace_edges, trace_nodes], name=str(i)))
-
-    # 创建初始的图形布局
-    fig = go.Figure(data=[frames[0]['data'][0], frames[0]['data'][1]],
-                    layout=go.Layout(
-                        scene=dict(xaxis=dict(showbackground=False),
-                                    yaxis=dict(showbackground=False),
-                                    zaxis=dict(showbackground=False)),
-                        updatemenus=[dict(type='buttons', showactive=False,
-                                        y=1,
-                                        x=0.8,
-                                        xanchor='left',
-                                        yanchor='bottom',
-                                        pad=dict(t=45, r=10),
-                                        buttons=[dict(label='Play',
-                                                        method='animate',
-                                                        args=[None, dict(frame=dict(duration=200, redraw=True), 
-                                                                        fromcurrent=True)])])],
-                        sliders=[dict(steps=[dict(method='animate', args=[[f.name], 
-                                                                        dict(mode='immediate',
-                                                                                frame=dict(duration=200, redraw=True))],
-                                                    label=f.name) for f in frames],
-                                    transition=dict(duration=0),
-                                    x=0, y=0, currentvalue=dict(visible=True, xanchor='right'))]))
-
-    fig.frames = frames
-    # fig.show()
-    fig.write_html(html_dir)
 
 if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

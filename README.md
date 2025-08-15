@@ -33,11 +33,11 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 
 ### Dependencies
 
-- Python 3.9+
-- PyTorch >= 1.10
-- NumPy
-- SciPy
-- Matplotlib
+- Python 3.9
+- PyTorch 1.13.0
+- NumPy 1.23.5
+- SciPy 1.13.1
+- Bctpy 0.6.0
 - (See [requirements.txt](./requirements.txt) for full list)
 
 # Installation Guide
@@ -60,7 +60,7 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 
 # Demo
 
-To run a demo of the main experiments:
+To run the main.py manually,
 ```bash
 conda activate mod_rnn
 mkdir -p ./runs/Fig2bcde_data/n_rnn_16_task_20_seed_100
@@ -69,9 +69,12 @@ python main.py --n_rnn $16 --rec_scale_factor 0.1 \
     --task_num 20 --gpu 0 --seed 100 --non_linearity relu \
     --save_model --max_trials 3000000 \
     --log_dir ./runs/Fig2bcde_data/n_rnn_16_task_20_seed_100 
-    
 ```
+or use the shell script to automate and manage multiple parallel Python tasks
 
+```bash
+./Fig2.a.sh
+```
 # Results
 
 Results and figures can be found in the `./runs` and `./figures` directory.  
@@ -80,7 +83,7 @@ Results and figures can be found in the `./runs` and `./figures` directory.
 
 If you use this code or data, please cite:
 ```
-@article{YourCitation2024,
+@article{YourCitation2025,
   title={Task-structured Modularity Emerges in Artificial Networks and Aligns with Brain Architecture},
   author={Your Name and Collaborators},
   journal={Journal Name},
