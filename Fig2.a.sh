@@ -21,8 +21,8 @@ task_list=("fdgo" "reactgo" "delaygo" "fdanti" "reactanti" "delayanti"
               "delaydm1" "delaydm2" "contextdelaydm1" "contextdelaydm2" "multidelaydm"
               "dmsgo" "dmsnogo" "dmcgo" "dmcnogo")
 
-for n_rnn in "${n_rnns[@]}"; do
-    for seed in "${seeds[@]}"; do
+for seed in "${seeds[@]}"; do
+    for n_rnn in "${n_rnns[@]}"; do
         index=0
         for task_name in "${task_list[@]}"; do
             gpu=${gpus[$index]}
@@ -43,7 +43,7 @@ for n_rnn in "${n_rnns[@]}"; do
             let index+=1
             let index%=num_of_gpus
         done
-        wait  # 等待所有后台任务完成
-        echo "All jobs for n_rnn=$n_rnn with seed=$seed completed at $(date)"
     done
+    wait  # 等待所有后台任务完成
+    echo "All jobs for n_rnn=$n_rnn completed at $(date)"
 done

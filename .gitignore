@@ -1,9 +1,5 @@
 *.pyc
-*.png
-*.jpg
 .gitignore
 *.html
 *.pth
 *runs
-*.svg
-*.pdf

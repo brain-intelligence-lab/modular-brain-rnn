@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pdb
 import matplotlib
 from matplotlib import font_manager 
+import os
 
 fonts_path = '~/.conda/myfonts'
 font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
@@ -22,7 +23,7 @@ if __name__ == '__main__':
     device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     model_size = 16
     seed = 100
-    step = 38000
+    step = 20000
     
     task_num_list = [3, 6, 11, 16, 20]
     for task_num in task_num_list:
@@ -35,7 +36,7 @@ if __name__ == '__main__':
         sorted_matrix = weights[sorted_indices][:, sorted_indices]
         
         # axs, fig = plt.subplots(figsize=(1.3, 1.3))
-        fig = plt.figure(figsize=(1.3, 1.3))
+        fig = plt.figure(figsize=(1.5, 1.5))
 
         # plt.imshow(sorted_matrix, cmap='Oranges_r', interpolation='nearest')  
         # plt.imshow(sorted_matrix, cmap='YlOrBr', interpolation='nearest')  
@@ -75,7 +76,9 @@ if __name__ == '__main__':
         axs.spines['left'].set_linewidth(0.25)  
         axs.spines['right'].set_linewidth(0.25) 
         
-        
-        plt.savefig(f'./figures/Fig2/Fig2f_{task_num}.jpg', format='jpg', dpi=300)
-        plt.savefig(f'./figures/Fig2/Fig2f_{task_num}.svg', format='svg', dpi=300)
+        figures_path = './figures/Fig2'
+        if not os.path.exists(figures_path):
+            os.makedirs(figures_path)
+        plt.savefig(f'{figures_path}/Fig2f_{task_num}.jpg', format='jpg', dpi=300)
+        plt.savefig(f'{figures_path}/Fig2f_{task_num}.svg', format='svg', dpi=300)
         print(f'step:{step}, task_num:{task_num}, modularity:{sc_qvalue}')

@@ -164,6 +164,7 @@ def train(args, writer:SummaryWriter):
             fc = np.mean(fc_list, 0)
             fc[ fc < 0 ] = 0
             _, fc_qvalue = bct.modularity_dir(fc)
+            # _, fc_qvalue = bct.modularity_und(fc) # because fc network is symmetric
             writer.add_scalar(tag = 'FC_Qvalue', scalar_value = fc_qvalue, global_step = step)
             
             loss_sum = sum(loss_list)

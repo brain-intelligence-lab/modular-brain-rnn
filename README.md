@@ -17,6 +17,8 @@
 This is the official repository for **Task-structured Modularity Emerges in Artificial Networks and Aligns with Brain Architecture**.  
 In this study, we demonstrate that multitask and incremental learning enhance modularity in recurrent neural networks (RNNs) compared to single-task learning, revealing how functional demands influence the structural organization of neural networks.
 
+![Schematics](./figures/Schematics.svg)
+
 # Repo Contents
 
 - [Data](./datasets/brain_hcp_data/84/): Data from The Human Connectome Project.
@@ -37,7 +39,7 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 - PyTorch 1.13.0
 - NumPy 1.23.5
 - SciPy 1.13.1
-- Bctpy 0.6.0
+- Bctpy 0.6.1
 - (See [requirements.txt](./requirements.txt) for full list)
 
 # Installation Guide
@@ -75,6 +77,11 @@ or use the shell script to automate and manage multiple parallel Python tasks
 ```bash
 ./Fig2.a.sh
 ```
+# Overall Workflow
+![](./figures/workflow.svg)
+
+
+
 # Results
 
 Results and figures can be found in the `./runs` and `./figures` directory.  
@@ -90,4 +97,6 @@ If you use this code or data, please cite:
   year={2025}
 }
 ```
+
+
 

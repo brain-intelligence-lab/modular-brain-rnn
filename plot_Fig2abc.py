@@ -147,8 +147,11 @@ def plot_fig2a(model_size_list, color_dict):
     plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel='Avg performance', color_dict=color_dict)
     plt.title('Single Task Learning', fontsize=7)
     plt.tight_layout()
-    fig.savefig('./figures/Fig2/Fig2a.svg', format='svg', dpi=300)
-    fig.savefig('./figures/Fig2/Fig2a.jpg', format='jpg', dpi=300)
+    figures_path = './figures/Fig2'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
+    fig.savefig(f'{figures_path}/Fig2a.svg', format='svg', dpi=300)
+    fig.savefig(f'{figures_path}/Fig2a.jpg', format='jpg', dpi=300)
 
 def plot_fig2b(model_size_list, color_dict):
     fig = plt.figure(figsize=(2.0, 2.0))
@@ -158,8 +161,12 @@ def plot_fig2b(model_size_list, color_dict):
     plot_fig(directory_name, seed_list, task_num_list, model_size_list, ylabel='Avg performance', color_dict=color_dict)
     plt.title('Multi-task Learning', fontsize=7)
     plt.tight_layout()
-    fig.savefig('./figures/Fig2/Fig2b.svg', format='svg', dpi=300)
-    fig.savefig('./figures/Fig2/Fig2b.jpg', format='jpg', dpi=300)
+    figures_path = './figures/Fig2'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
+        
+    fig.savefig(f'{figures_path}/Fig2b.svg', format='svg', dpi=300)
+    fig.savefig(f'{figures_path}/Fig2b.jpg', format='jpg', dpi=300)
 
 def plot_fig2c(color_dict, N=15):
     fig = plt.figure(figsize=(2.0, 2.0))
@@ -200,8 +207,13 @@ def plot_fig2c(color_dict, N=15):
     # plt.title(f'Single task vs Multi-task\n(# Hidden Neurons: {N})', fontsize=6)
     plt.title(f'Single task vs Multi-task', fontsize=6)
     plt.tight_layout()
-    fig.savefig(f'./figures/Fig2/Fig2c_{N}.jpg', format='jpg', dpi=300)
-    fig.savefig(f'./figures/Fig2/Fig2c_{N}.svg', format='svg', dpi=300)
+    
+    figures_path = './figures/Fig2'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
+        
+    fig.savefig(f'{figures_path}/Fig2c_{N}.jpg', format='jpg', dpi=300)
+    fig.savefig(f'{figures_path}/Fig2c_{N}.svg', format='svg', dpi=300)
     
 
 model_size_list = [8, 16, 32, 64]
