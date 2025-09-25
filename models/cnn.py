@@ -1,0 +1,50 @@
+import torch
+import numpy as np
+import torch.nn as nn
+
+class SiameseNet(nn.Module):
+    def __init__(self, input_channels=3, channels_1=32, channels_2=32, output_channels=64):
+        super(SiameseNet, self).__init__()
+        # 主干网络，用于提取特征
+        self.conv1 = nn.Conv2d(input_channels, channels_1, kernel_size=3, padding=1) # hidden_channels x 32 x 32
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)  # hidden_channels x 16 x 16
+        
+        self.conv2 = nn.Conv2d(channels_1, channels_2, kernel_size=3, padding=1) # hidden_channels x 16 x 16
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)  # hidden_channels x 8 x 8
+        
+        self.flatten = nn.Flatten()
+        self.fc1 = nn.Linear(channels_2 * 8 * 8, 256)
+        self.relu3 = nn.ReLU()   
+        self.fc2 = nn.Linear(256, output_channels)
+        
+
+        
+    def apply_scale_factor(self, scale_factor=0.1, layer_to_scale='conv1'):
+        with torch.no_grad():
+            target_layer = dict(self.named_modules())[layer_to_scale] 
+            sum_before_scaling = target_layer.weight.data.abs().sum().item()
+            target_layer.weight.data *= scale_factor
+            sum_after_scaling = dict(self.named_modules())[layer_to_scale].weight.data.abs().sum().item()
+            assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "缩放后的权重和不符合预期！"
+            print(f"已将层 '{layer_to_scale}' 的权重乘以缩放)")
+        
+
+    def forward_one(self, x):
+        """通过主干网络处理单张图片"""
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        x = self.flatten(x)
+        
+        x = self.fc1(x)
+        x = self.relu3(x)
+        out = self.fc2(x)
+        
+        return out
+
+    def forward(self, x1, x2):
+        """处理一对图片"""
+        out1 = self.forward_one(x1)
+        out2 = self.forward_one(x2)
+        return out1, out2

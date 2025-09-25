@@ -1,11 +1,8 @@
 import numpy as np 
 import matplotlib.pyplot as plt
 from scipy import stats
-from tqdm import tqdm
-import time
 import pdb
 import tensorflow as tf
-import statsmodels.stats.multitest as smm
 
 import matplotlib
 from matplotlib import font_manager 
@@ -39,62 +36,70 @@ def list_files(directory):
 
 task_num = 20
 
-# model_size_list = [8, 10, 15, 16, 30, 32, 64]
-model_size_list = [8, 16, 32, 64]
+# model_size_list = [8, 16, 32, 64]
+model_size_list = [8, 10, 12]
 for m_idx, n_rnn in enumerate(model_size_list):
     # paths = list_files(f"./runs/seed_search_0.1_relu_{n_rnn}")
     paths = list_files(f"./runs/Fig3c_seed_search_0.1_relu_{n_rnn}")
     
     r_list = []
     p_list = []
-    step_range = range(500, 20500, 500)
+    avg_loss_list = []
+    avg_mod_list = []
+    step_range = range(500, 78500, 500)
 
-    for step in step_range:
-        
-        modularity_array = []
-        perf_avg_array = []
-        perf_var_array = []
-        
-        for idx, events_file in enumerate(paths):
-            # if idx == 100:
-            #     break
-            
-            modularity = -1
-            perf_avg = -1
-            
-            perf_list = []
-            
-            for e in tf.compat.v1.train.summary_iterator(events_file):
+    modularity_array = []
+    perf_avg_array = []
+    loss_array = []
+    for idx, events_file in enumerate(paths):
+        modularity_array.append([])
+        perf_avg_array.append([])
+        loss_array.append([])
+        mod_mp = {}
+        perf_mp = {}
+        loss_mp = {}
 
-                if e.step != step:
-                    continue
-                
+
+        for e in tf.compat.v1.train.summary_iterator(events_file):
+            if e.step in step_range:
                 for v in e.summary.value:
                     if v.tag == 'SC_Qvalue':
-                        modularity = v.simple_value
+                        if e.step not in mod_mp:
+                            mod_mp[e.step] = v.simple_value
                     if v.tag == 'perf_avg':
-                        perf_avg = v.simple_value
-                    # elif v.tag != 'perf_min' and 'perf' in v.tag:
-                    #     perf_list.append(v.simple_value)
-                        
-            if modularity != -1:
-                modularity_array.append(modularity)
-                perf_avg_array.append(perf_avg)
-                # perf_var = np.var(perf_list)
-                # perf_var_array.append(perf_var)
-                
+                        if e.step not in perf_mp:
+                            perf_mp[e.step] = v.simple_value
+                    if v.tag == 'Loss':
+                        if e.step not in loss_mp:
+                            loss_mp[e.step] = v.simple_value
 
-        modularity_array = np.array(modularity_array)
-        perf_avg_array = np.array(perf_avg_array)
-        # perf_var_array = np.array(perf_var_array)
-        
-        print(perf_avg_array.mean())
 
-        r, p = stats.pearsonr(modularity_array, perf_avg_array)
-        print(f'step:{step}, r:{r:.4f}, p:{p:.4f}, len:{len(modularity_array)}')
+        for key, value in mod_mp.items():
+            modularity_array[-1].append(value)
+        for key, value in perf_mp.items():
+            perf_avg_array[-1].append(value)
+        for key, value in loss_mp.items():
+            loss_array[-1].append(value)
+            
+
+    modularity_array = np.array(modularity_array)
+    perf_avg_array = np.array(perf_avg_array)
+    loss_array = np.array(loss_array)
+    for idx, step in enumerate(step_range):
+        # r, p = stats.pearsonr(modularity_array[:, idx], perf_avg_array[:, idx])
+        r, p = stats.pearsonr(modularity_array[:, idx], loss_array[:, idx])
+        print(f'step:{step}, r:{r:.4f}, p:{p:.4f}, len:{modularity_array.shape[0]}')
         
         r_list.append(r)
         p_list.append(p)
+        avg_loss_list.append(np.mean(loss_array[:, idx]))
+        avg_mod_list.append(np.mean(modularity_array[:, idx]))
+
+    max_mod = np.max(modularity_array, axis=1)
+    perf = perf_avg_array[:, -1]
+    # perf = np.mean(perf_avg_array[:, -3:], axis=1)
+    r, p = stats.pearsonr(max_mod, perf)
+    print(f'n_rnn={n_rnn} max_mod v.s. final_perf:  r:{r:.4f}, p:{p:.4f}, len:{max_mod.shape[0]}')
 
     sort_p_list = sorted(p_list)
 
@@ -123,11 +128,10 @@ for m_idx, n_rnn in enumerate(model_size_list):
     x_ticks = [ i for i in range(19, len(r_list)+1, 20)]
 
     x_tick_labels = [500*(i+1) for i in x_ticks]
-    
-    fig = plt.figure(figsize=(1.5, 3.0))
-    
-    rows = 2
 
+    rows = 3
+    fig = plt.figure(figsize=(2.8, 2.8*rows))
+    
     axes = []
     for i in range(rows):
         axs = plt.subplot2grid((rows, 1), (i, 0), rowspan=1, colspan=1)
@@ -144,7 +148,13 @@ for m_idx, n_rnn in enumerate(model_size_list):
     axes[1].bar(range(len(p_list)), p_list, color='lightgray')    
     axes[1].set_ylabel('-log(p)', fontsize=6, labelpad=1)
 
-    for j in range(2):
+    axes[2].bar(range(len(avg_mod_list)), avg_mod_list, color='goldenrod')
+    axes[2].set_ylabel('Modularity', fontsize=6, labelpad=1)
+
+    # axes[3].bar(range(len(avg_loss_list)), avg_loss_list, color='lightcoral')    
+    # axes[3].set_ylabel('Loss', fontsize=6, labelpad=1)
+
+    for j in range(rows):
         axes[j].set_xticklabels(x_tick_labels)
         axes[j].set_xticks(x_ticks)
         axes[j].spines['top'].set_linewidth(0.25)    
@@ -154,7 +164,10 @@ for m_idx, n_rnn in enumerate(model_size_list):
         axes[j].tick_params(axis='both', width=0.25, length=1.0, labelsize=5, pad=1)
         axes[j].set_xlabel('Iterations', fontsize=6, labelpad=1)
 
+    figure_path = './figures/Fig3/Fig3c'
+    if os.path.exists(figure_path) is False:
+        os.makedirs(figure_path)
     # 调整布局
     plt.tight_layout()
-    plt.savefig(f"./figures/Fig3/Fig3c/Correlation_bar_{n_rnn}.svg", format='svg', dpi=300)
-    plt.savefig(f"./figures/Fig3/Fig3c/Correlation_bar_{n_rnn}.jpg", format='jpg', dpi=300)
+    plt.savefig(f"{figure_path}/Correlation_bar_{n_rnn}.svg", format='svg', dpi=300)
+    plt.savefig(f"{figure_path}/Correlation_bar_{n_rnn}.jpg", format='jpg', dpi=300)

@@ -130,7 +130,11 @@ for idx, n_rnn in enumerate(model_size_list):
     axs.legend(loc='lower right', bbox_to_anchor=(0.98, 0.05), frameon=False, fontsize=6)
         
     plt.tight_layout()
+    figure_path = './figures/Fig2'
+    if os.path.exists(figure_path) is False:
+        os.makedirs(figure_path)
+
     # 保存为SVG格式
-    plt.savefig(f"./figures/Fig2/Fig2de_{n_rnn}.svg", format='svg', dpi=300)
+    plt.savefig(f"{figure_path}/Fig2de_{n_rnn}.svg", format='svg', dpi=300)
     # 保存为JPG格式
-    plt.savefig(f"./figures/Fig2/Fig2de_{n_rnn}.jpg", format='jpg', dpi=300)
+    plt.savefig(f"{figure_path}/Fig2de_{n_rnn}.jpg", format='jpg', dpi=300)
