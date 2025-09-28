@@ -57,7 +57,7 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 3. Install dependencies:
     ```bash
     pip install -r requirements.txt
-    conda install -c conda-forge r-base=4.5.1
+    conda install -c conda-forge r-base
     conda install rpy2
     ```
 

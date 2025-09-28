@@ -9,7 +9,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt 
 import rpy2.robjects as robjects
-from rpy2.robjects import numpy2ri
+from rpy2.robjects import numpy2ri, default_converter, conversion
 import tensorflow as tf
 from functions.utils.eval_utils import lock_random_seed
 import argparse
@@ -18,11 +18,11 @@ import pdb
 
 def start_parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--channels_1', default=32, type=int)
-    parser.add_argument('--channels_2', default=32, type=int)
+    parser.add_argument('--channels_1', default=8, type=int)
+    parser.add_argument('--channels_2', default=8, type=int)
     parser.add_argument('--gpu', default=1, type=int)
     parser.add_argument('--seed', default=2024, type=int)
-    parser.add_argument('--log_dir', type=str, default='./runs/cnn_models_data/')
+    parser.add_argument('--log_dir', type=str, default='./runs/cnn_models_data_1.0/')
     parser.add_argument('--analyze_every_n_batches', default=20, type=int)
     parser.add_argument('--r_script_path', type=str, default="LPA_wb_plus.R")
     parser.add_argument('--dataset_dir', default='/data_nv/dataset/cifar10', type=str)
@@ -42,27 +42,29 @@ def start_parse():
 def calculate_modularity_in_r(weight_matrix: np.ndarray, r_script_path:str, verbose:bool=False):
     assert os.path.exists(r_script_path), f"R script '{r_script_path}' not found."
 
-    numpy2ri.activate() # 激活 numpy -> R matrix 的自动转换
-    r = robjects.r
+    np_cv_rules = default_converter + numpy2ri.converter
+    with conversion.localconverter(np_cv_rules):
+        r = robjects.r
 
-    r.source(r_script_path) # 加载 R 脚本
-    lpa_wb_plus_func = robjects.globalenv['LPA_wb_plus']
-    dirt_lpa_func = robjects.globalenv['DIRT_LPA_wb_plus']
-    r_matrix = robjects.conversion.py2rpy(weight_matrix) # 转换为 R 矩阵
+        r.source(r_script_path) # 加载 R 脚本
+        lpa_wb_plus_func = robjects.globalenv['LPA_wb_plus']
+        dirt_lpa_func = robjects.globalenv['DIRT_LPA_wb_plus']
+        r_matrix = robjects.conversion.py2rpy(weight_matrix) # 转换为 R 矩阵
 
-    # 调用 R 函数
+        # 调用 R 函数
+        if verbose:
+            print(" 正在调用 LPA_wb_plus(MAT)...") 
+        mod1_result = lpa_wb_plus_func(r_matrix)
+        
+        if verbose:
+            print(" 正在调用 DIRT_LPA_wb_plus(MAT)...") 
+        mod2_result = dirt_lpa_func(r_matrix)
+
+    modularity1 = mod1_result[2]
+    modularity2 = mod2_result[2]
+
     if verbose:
-        print(" 正在调用 LPA_wb_plus(MAT)...") 
-    mod1_result = lpa_wb_plus_func(r_matrix)
-    
-    if verbose:
-        print(" 正在调用 DIRT_LPA_wb_plus(MAT)...") 
-    mod2_result = dirt_lpa_func(r_matrix)
-
-    modularity1 = mod1_result.rx2('modularity')[0]
-    modularity2 = mod2_result.rx2('modularity')[0]
-
-    numpy2ri.deactivate() # 关闭转换
+        print(f" 模块度结果: LPA_wb_plus = {modularity1}, DIRT_LPA_wb_plus = {modularity2}")
     
     return modularity1, modularity2
 
@@ -229,7 +231,7 @@ if __name__ == "__main__":
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     
     model = SiameseNet(channels_1=args.channels_1, channels_2=args.channels_2, output_channels=64).to(device)
-    model.apply_scale_factor(scale_factor=0.1, layer_to_scale=args.layer_to_scale)
+    model.apply_scale_factor(scale_factor=args.weight_scale_factor, layer_to_scale=args.layer_to_scale)
 
     # --- 模型、损失函数、优化器 (为每个 run 重新初始化) ---
     criterion = ContrastiveLoss()

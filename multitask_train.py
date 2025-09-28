@@ -191,6 +191,29 @@ def train(args, writer:SummaryWriter):
     handle.remove()
     print("Optimization finished!")
 
+def get_chance_level(args, writer:SummaryWriter):
+    device = args.device
+    hp = gen_hp(args)
+    model = RNN(hp=hp, device=device, rec_scale_factor=args.rec_scale_factor).to(device)
+            
+    step = args.display_step
+    while step * hp['batch_size_train'] <= args.max_trials:
+        if step % args.display_step == 0:
+            weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
+            ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
+            
+            log = do_eval(model, rule_train=hp['rule_trains'])
+            writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = step)
+            writer.add_scalar(tag = 'perf_avg', scalar_value = log['perf_avg'][-1], global_step = step)
+            writer.add_scalar(tag = 'perf_min', scalar_value = log['perf_min'][-1], global_step = step)
+            
+            for list_name, perf_list in log.items():
+                if not 'min' in list_name and not 'avg' in list_name:
+                    writer.add_scalar(tag = list_name , scalar_value = perf_list[-1], global_step = step)
+                    
+        step += args.display_step
+        
+    print("Chance level evaluation finished!")
 
 def train_sequential(args, writer:SummaryWriter, rule_trains=None):
     device = args.device

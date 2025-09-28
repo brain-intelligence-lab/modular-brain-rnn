@@ -8,15 +8,6 @@ import tensorflow as tf
 import scipy.stats as stats
 import os
 
-
-fonts_path = '~/.conda/myfonts'
-font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
-
-for file in font_files:
-    font_manager.fontManager.addfont(file)
-
-matplotlib.rcParams['font.family'] = 'Myriad Pro'
-plt.rcParams["font.sans-serif"] = 'Myriad Pro'
 matplotlib.rcParams['pdf.fonttype'] = 42
 
 
@@ -34,10 +25,13 @@ def list_files(directory, name):
     return None
 
 
-def get_seed_avg(directory_name, model_size, task, seed_list):
+def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False):
     seed_paths_list = []
     for s_idx, seed_name in enumerate(seed_list):
-        file_name = f"n_rnn_{model_size}_task_{task}_seed_{seed_name}"
+        if chance_flag:
+            file_name = f"chance_n_rnn_{model_size}_task_{task}_seed_{seed_name}"
+        else:
+            file_name = f"n_rnn_{model_size}_task_{task}_seed_{seed_name}"
         paths = list_files(directory_name, file_name)
         seed_paths_list.append(paths)
 
@@ -63,18 +57,22 @@ def get_seed_avg(directory_name, model_size, task, seed_list):
     print(f'model_size:{model_size}, avg_perf:{perf_avg_mean.mean():.4f}, avg_moduarlity:{modularity_mean.mean():.4f}')    
     return modularity_seed_array, perf_avg_seed_array
 
-def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel, plot_perf=True, linelabel=None, color_dict=None):
+def plot_fig(directory_name, seed_list, task_name_list, model_size_list, \
+    ylabel, plot_perf=True, linelabel=None, color_dict=None, chance_flag=False):
 
     for model_idx, model_size in enumerate(model_size_list):
         modularity_all_array = []
         perf_avg_all_array = []
         
         for task_idx, task_name in enumerate(task_name_list):
-            modularity_seed_array, perf_avg_seed_array = get_seed_avg(directory_name, model_size, task=task_name, seed_list=seed_list)
+            modularity_seed_array, perf_avg_seed_array = get_seed_avg(directory_name, \
+                model_size, task=task_name, seed_list=seed_list, chance_flag=chance_flag)
+
             modularity_all_array.append(modularity_seed_array)
             perf_avg_all_array.append(perf_avg_seed_array)
         
-        epochs_num = modularity_all_array[0].shape[-1]
+        assert modularity_all_array[0].shape[-1] == perf_avg_all_array[0].shape[-1]
+        epochs_num = perf_avg_all_array[0].shape[-1]
         modularity_all_array = np.array(modularity_all_array).reshape(-1, epochs_num)
         perf_avg_all_array = np.array(perf_avg_all_array).reshape(-1, epochs_num)
         
@@ -90,24 +88,34 @@ def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel,
         x_ticks = [i for i in range(20, perf_avg_seed_array.shape[1]+1, 20)]
         x_ticks = [0] + x_ticks
         x_tick_labels = [500*i for i in x_ticks]
-                
+        
         if plot_perf:
             # 从颜色映射中获取颜色
             color = color_dict[model_size]
-            plt.plot(perf_avg_mean, label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel, color=color, linewidth=0.25)
+            label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel
+            label = None if chance_flag else label
+            plt.plot(perf_avg_mean, label = label, \
+                color=color, linewidth=0.25, linestyle=':' if chance_flag else '-')
+            
             plt.xticks(ticks=x_ticks, labels=x_tick_labels, fontsize=6)
             y_ticks = np.arange(0.0, 1.1, 0.2)  # 注意，终点设置为1.1以包括1.0
             plt.ylim([0.0, 1.0])  # 设置y轴的范围从0.0到1.0
             y_ticks_labels = [f"{tick:.1f}" for tick in y_ticks]  # 格式化标签为一位小数
             plt.yticks(ticks=y_ticks, labels=y_ticks_labels, fontsize=6)        
             plt.ylabel(f'{ylabel}', fontsize=7)
-            plt.fill_between(range(perf_avg_seed_array.shape[1]), perf_avg_mean - perf_avg_ste, perf_avg_mean + perf_avg_ste, color=color, alpha=0.2)
+            if not chance_flag:
+                plt.fill_between(range(perf_avg_seed_array.shape[1]), perf_avg_mean - perf_avg_ste,\
+                    perf_avg_mean + perf_avg_ste, color=color, alpha=0.2)
         else:
             if 'Multi' in linelabel:
                 last_key, color = next(reversed(color_dict.items()))
             else:
                 first_key, color = next(iter(color_dict.items()))
-            plt.plot(modularity_mean, label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel, color=color, linewidth=0.25)
+
+            label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel
+            label = None if chance_flag else label    
+            plt.plot(modularity_mean, label = label, \
+                color=color, linewidth=0.25, linestyle=':' if chance_flag else '-')
             plt.xticks(ticks=x_ticks, labels=x_tick_labels, fontsize=6)
 
             y_ticks = np.arange(0.0, 0.30, 0.05)  
@@ -117,7 +125,9 @@ def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel,
             y_ticks_labels = [f"{tick:.2f}" for tick in y_ticks]  # 格式化标签为一位小数
             plt.yticks(ticks=y_ticks, labels=y_ticks_labels, fontsize=6) 
             plt.ylabel(f'{ylabel}', fontsize=7)
-            plt.fill_between(range(modularity_seed_array.shape[1]), modularity_mean - modularity_ste, modularity_mean + modularity_ste, color=color, alpha=0.2)
+            if not chance_flag:
+                plt.fill_between(range(modularity_seed_array.shape[1]), modularity_mean - modularity_ste, \
+                                modularity_mean + modularity_ste, color=color, alpha=0.2)
             
         plt.xlabel('Iterations', fontsize=6)
         plt.legend(loc='lower right', bbox_to_anchor=(0.98, 0.05), frameon=False, fontsize=5)
@@ -144,7 +154,11 @@ def plot_fig2a(model_size_list, color_dict):
                 'delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm',
                 'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
     
-    plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel='Avg performance', color_dict=color_dict)
+    for flag in [False, True]:
+        plot_fig(directory_name, seed_list, task_name_list, model_size_list, \
+            ylabel='Avg performance', plot_perf=True, \
+                color_dict=color_dict, chance_flag=flag)
+
     plt.title('Single Task Learning', fontsize=7)
     plt.tight_layout()
     figures_path = './figures/Fig2'
@@ -158,7 +172,10 @@ def plot_fig2b(model_size_list, color_dict):
     directory_name = "./runs/Fig2bcde_data"
     seed_list = [ i for i in range(100, 1100, 100)]
     task_num_list = [20]
-    plot_fig(directory_name, seed_list, task_num_list, model_size_list, ylabel='Avg performance', color_dict=color_dict)
+    for flag in [False, True]:
+        plot_fig(directory_name, seed_list, task_num_list, model_size_list, \
+            ylabel='Avg performance', color_dict=color_dict, chance_flag=flag)
+
     plt.title('Multi-task Learning', fontsize=7)
     plt.tight_layout()
     figures_path = './figures/Fig2'

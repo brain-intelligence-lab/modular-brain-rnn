@@ -2,7 +2,7 @@ import argparse
 import torch
 from functions.utils.eval_utils import lock_random_seed
 from tensorboardX import SummaryWriter
-from multitask_train import train, train_sequential
+from multitask_train import train, train_sequential, get_chance_level
 from datetime import datetime
 import os
 import pdb
@@ -34,6 +34,7 @@ def start_parse():
     parser.add_argument('--module_size_list', nargs='+', help='A list of module size', default=None)
     parser.add_argument('--reg_term', action='store_true')
     parser.add_argument('--easy_task', action='store_true')
+    parser.add_argument('--get_chance_level', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -60,6 +61,11 @@ if __name__ == '__main__':
         f.write(f'current_time: {current_time}\n')
         for arg, value in sorted(vars(args).items()):
             f.write(f'{arg}: {value}\n')
+    
+    if args.get_chance_level:
+        get_chance_level(args, writer=writer)
+        writer.close()
+        exit(0)
             
     if args.continual_learning:
         if args.task_list is None:
