@@ -22,6 +22,7 @@ def start_parse():
     parser.add_argument('--load_model', type=str)
     parser.add_argument('--conn_num', type=int, default=-1)
     parser.add_argument('--conn_mode',choices=['fixed', 'grow', 'full'], default='full')
+    parser.add_argument('--rnn_type', choices=['RNN', 'GRU', 'LSTM'], default='RNN')
     parser.add_argument('--wiring_rule', choices=['distance', 'random'], default='distance')
     parser.add_argument('--loss_type', choices=['lsq', 'ce'], default='lsq')
     parser.add_argument('--ksi', default=0.1, type=float)

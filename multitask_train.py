@@ -149,7 +149,8 @@ def train(args, writer:SummaryWriter):
         if step % args.display_step == 0:
             num_trials = step * hp['batch_size_train']
             
-            weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
+            # weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
+            weight = model.get_layer_to_analyze()
             ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
 
             cluster_sizes = Counter(ci)

@@ -95,7 +95,7 @@ def plot_fig(directory_name, seed_list, task_name_list, model_size_list, \
             label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel
             label = None if chance_flag else label
             plt.plot(perf_avg_mean, label = label, \
-                color=color, linewidth=0.25, linestyle=':' if chance_flag else '-')
+                color=color, linewidth=0.25, linestyle=(0, (2, 5)) if chance_flag else '-')
             
             plt.xticks(ticks=x_ticks, labels=x_tick_labels, fontsize=6)
             y_ticks = np.arange(0.0, 1.1, 0.2)  # 注意，终点设置为1.1以包括1.0
