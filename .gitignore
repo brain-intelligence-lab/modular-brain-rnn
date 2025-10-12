@@ -1,3 +1,4 @@
+*.pt
 *.pyc
 .gitignore
 *.html

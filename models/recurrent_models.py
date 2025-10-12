@@ -85,7 +85,10 @@ class RNN(base_recurrent_model):
 
         self.comm_loss = 0.0  # 重置 comm_loss
         for t in range(T):
-            rec_noise = torch.rand_like(rnn_inputs[t]) * self.sigma
+            if x[t].abs().sum() < 1e-3: 
+                rec_noise = 0.0  # no rec_noise for zero-padding
+            else:
+                rec_noise = torch.rand_like(rnn_inputs[t]) * self.sigma
             output = self.rnn_activation(rnn_inputs[t] + rec_noise + \
                 nn.functional.linear(self.hidden_state, masked_weights, self.recurrent_conn.bias))
             
@@ -138,6 +141,15 @@ class RNN(base_recurrent_model):
         
         self.mask_list = [mask]
         self.mask_idx = 0
+    
+    # def gen_random_conn_matrix(self, num_of_conn):
+    #     n = self.hp['n_rnn']
+    #     assert num_of_conn <= n * n
+    #     mask = np.zeros((n, n), dtype=np.float32) 
+    #     indices = np.random.choice(n * n, num_of_conn, replace=False)
+    #     np.put(mask, indices, 1)
+    #     self.mask_list = [mask]
+    #     self.mask_idx = 0
 
     def update_conn_num(self, add_conn_num):
         self.mask_idx += add_conn_num # 1-index

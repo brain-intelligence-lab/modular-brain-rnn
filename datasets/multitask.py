@@ -3,6 +3,10 @@
 from __future__ import division
 import six
 import numpy as np
+import torch
+import random
+import os
+from tqdm import tqdm
 
 # https://github.com/gyyang/multitask/blob/master/task.py
 
@@ -1700,3 +1704,234 @@ def get_default_hp(ruleset):
         }
 
     return hp
+
+
+
+class Multitask_Batched(torch.utils.data.Dataset):
+    """
+    修改版本: 
+    - 数据按批次(batch)存储和读取。
+    - 数据生成采用周期性策略，确保每28个batches内任务分布固定。
+    """
+    def __init__(self, hp, num_of_trials, batch_size, data_dir):
+        self.hp = hp
+        self.task_list = hp['rule_trains']
+        self.task_prob = hp['rule_probs']
+        self.data_dir = data_dir
+        self.device = hp['device']
+        self.batch_size = batch_size
+        
+        assert num_of_trials % batch_size == 0, \
+            "num_of_trials must be divisible by batch_size."
+
+        self.num_batches = num_of_trials // self.batch_size
+
+        if not self._check_data_exists():
+            print(f"Batched data not found in {data_dir} or incomplete.\
+                 Generating and saving new batches...")
+            os.makedirs(self.data_dir, exist_ok=True)
+            self._generate_and_save_batches()
+        else:
+            print(f"Found existing batched data in {data_dir}. Loading paths...")
+
+        self.batch_paths = self._collect_batch_paths()
+
+    def _check_data_exists(self):
+        """检查所需数量的批次文件是否已存在"""
+        if not os.path.exists(self.data_dir):
+            return False
+        
+        existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.pt')]
+        return len(existing_files) >= self.num_batches
+
+    def _collect_batch_paths(self):
+        """收集所有 batch 文件的路径，并按编号排序"""
+        files_with_index = []
+        for f in os.listdir(self.data_dir):
+            if f.endswith('.pt'):
+                index = int(f.split('_')[1].split('.')[0])
+                files_with_index.append((index, os.path.join(self.data_dir, f)))
+
+        files_with_index.sort(key=lambda x: x[0])
+        return [path for index, path in files_with_index]
+
+    def _generate_and_save_batches(self):
+        """
+        【核心修改】按周期生成和保存批次。
+        每个周期包含28个批次，任务分布固定，但周期内顺序随机。
+        """
+        os.makedirs(self.data_dir, exist_ok=True)
+        
+        # 1. 定义周期的长度
+        cycle_length = int(1.0/ np.min(self.task_prob))
+        
+        assert self.num_batches % cycle_length == 0, \
+            f"Total number of batches ({self.num_batches}) \
+                must be a multiple of cycle_length ({cycle_length})."
+
+        num_cycles = self.num_batches // cycle_length
+
+        # 2. 根据概率计算每个周期内，每个任务应该生成的批次数
+        # 我们假设概率的分母就是 cycle_length (28)
+        task_counts_per_cycle = (np.array(self.task_prob) * cycle_length).round().astype(int)
+        
+        # 安全检查：确保计算出的总数正好等于一个周期的长度
+        if task_counts_per_cycle.sum() != cycle_length:
+            raise ValueError(f"Task probabilities do not sum up \
+                correctly for a cycle of {cycle_length}. "
+            f"Calculated counts: {task_counts_per_cycle.sum()}")
+
+        # 3. 创建一个基础的、未打乱的周期任务“播放列表”
+        base_cycle_playlist = []
+        for task_name, count in zip(self.task_list, task_counts_per_cycle):
+            base_cycle_playlist.extend([task_name] * count)
+
+        # 4. 循环生成每个周期的数据
+        current_batch_index = 0
+        
+        for _ in tqdm(range(num_cycles)):
+
+            # 5. 复制并打乱当前周期的任务顺序
+            shuffled_playlist = base_cycle_playlist.copy()
+            random.shuffle(shuffled_playlist)
+            
+            # 6. 遍历打乱后的播放列表，生成并保存每个批次
+            for task_name_now in shuffled_playlist:
+                trial = generate_trials(
+                    task_name_now, self.hp, 'random',
+                    batch_size=self.batch_size
+                )
+                
+                # 转换并打包张量
+                input_cpu = torch.from_numpy(trial.x)
+                target_cpu = torch.from_numpy(trial.y)
+                c_mask_cpu = torch.from_numpy(trial.c_mask)
+                y_loc_cpu = torch.from_numpy(trial.y_loc)
+                
+                if torch.numel(c_mask_cpu) == torch.numel(target_cpu):
+                    c_mask_cpu = c_mask_cpu.reshape(target_cpu.shape[0], target_cpu.shape[1], -1)
+
+                batch_sample = (input_cpu, target_cpu, c_mask_cpu, y_loc_cpu)
+                
+                # 使用连续的索引号保存文件
+                file_path = os.path.join(self.data_dir, f'{task_name_now}_{current_batch_index}.pt')
+                torch.save(batch_sample, file_path)
+                
+                # 更新全局批次索引
+                current_batch_index += 1
+
+
+    def __len__(self):
+        return self.num_batches
+
+    def __getitem__(self, index):
+        batch_path = self.batch_paths[index]
+        input_batch_cpu, target_batch_cpu, c_mask_batch_cpu, _ = \
+            torch.load(batch_path, map_location='cpu')
+        return input_batch_cpu, target_batch_cpu, c_mask_batch_cpu
+
+
+def _check_data_exists(data_dir, num_batches):
+    """检查所需数量的批次文件是否已存在"""
+    if not os.path.exists(data_dir):
+        return False
+    
+    existing_files = [f for f in os.listdir(data_dir) if f.endswith('.pt')]
+    return len(existing_files) >= num_batches
+
+
+def Get_Testset(hp, data_dir, n_rep = 16, batch_size = 32):
+    device = hp['device']
+    task_list = hp['rules']
+    num_batches = len(task_list) * n_rep
+
+    test_set = {task_name:[] for task_name in task_list}
+
+    if not _check_data_exists(data_dir, num_batches):
+        print(f"Batched data not found in {data_dir} or incomplete. \
+            Generating and saving new batches...")
+
+        os.makedirs(data_dir, exist_ok=True)
+        current_batch_index = 0
+
+        for _ in tqdm(range(n_rep)):
+            for task_name_now in task_list:                
+                trial = generate_trials(
+                    task_name_now, hp, 'random',
+                    batch_size = batch_size
+                )
+                file_path = os.path.join(data_dir, f'{task_name_now}_{current_batch_index}.pt')
+
+                input = torch.from_numpy(trial.x).to(device)
+                y_loc = trial.y_loc
+                batch_sample = (input, y_loc)
+
+                torch.save(batch_sample, file_path)
+                test_set[task_name_now].append(batch_sample)
+                current_batch_index += 1
+
+    else:
+        for f in os.listdir(data_dir):
+            if f.endswith('.pt'):
+                # "fdgo_123.pt" ---> "fdgo" "123.pt"
+                task_name = f.split('_')[0]
+                batch_path =  os.path.join(data_dir, f)
+            
+                input_tensor, y_loc_numpy = \
+                torch.load(batch_path, map_location='cpu')
+                input_tensor = input_tensor.to(device)
+                batch_sample = (input_tensor, y_loc_numpy)
+                test_set[task_name].append(batch_sample)
+    
+    return test_set
+
+
+
+def preprocess_dataset_for_gpu_global(dataset, hp_rules, device):
+    """
+    Globally preprocesses the entire dataset, combining all rules into a single
+    set of tensors for a one-shot evaluation.
+    """
+    print("Globally preprocessing dataset for a single forward pass...")
+    
+    global_inputs_flat = []
+    global_ylocs_flat = []
+    global_lengths = []
+    rule_indices = {}
+    current_index = 0
+
+    # 必须按hp['rules']的顺序处理，以保证后续评估的一致性
+    for rule in hp_rules:
+        batches = dataset.get(rule, [])
+        if not batches: continue
+
+        rule_start_index = current_index
+        for input_batch, yloc_batch in batches:
+            time_len, batch_size = input_batch.shape[0], input_batch.shape[1]
+            
+            global_lengths.extend([time_len] * batch_size)
+            global_inputs_flat.extend(list(torch.unbind(input_batch, dim=1)))
+            global_ylocs_flat.extend([yloc_batch[:, i] for i in range(yloc_batch.shape[1])])
+            current_index += batch_size
+        
+        rule_indices[rule] = (rule_start_index, current_index)
+
+    padded_inputs = torch.nn.utils.rnn.pad_sequence(
+        global_inputs_flat, batch_first=False, padding_value=0.0
+    ).to(device)
+    
+    all_ylocs_tensors = [torch.from_numpy(y) for y in global_ylocs_flat]
+    padded_ylocs = torch.nn.utils.rnn.pad_sequence(
+        all_ylocs_tensors, batch_first=False, padding_value=-1.0
+    ).to(device)
+
+    last_step_indices = torch.tensor(global_lengths, device=device) - 1
+    
+    print("Global preprocessing complete.")
+    return {
+        'padded_inputs': padded_inputs,
+        'padded_ylocs': padded_ylocs,
+        'last_step_indices': last_step_indices,
+        'rule_indices': rule_indices,
+        'total_trials': len(global_lengths)
+    }

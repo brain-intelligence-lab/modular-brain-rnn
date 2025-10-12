@@ -1,13 +1,18 @@
+from numpy.random import shuffle
 import torch
 import datasets.multitask as task
 from models.recurrent_models import RNN
-from functions.utils.eval_utils import do_eval
+from functions.utils.eval_utils import do_eval, \
+    do_eval_with_dataset, do_eval_with_dataset_torch_fast
+    
 import torch.nn.functional as F
 import numpy as np
 from collections import Counter
 import os
 from tensorboardX import SummaryWriter
 import bct
+import itertools
+from tqdm import tqdm
 import pdb
 
 hidden_states = None
@@ -48,6 +53,7 @@ def gen_hp(args):
     hp['c_intsyn'] = args.reg_factor
     hp['loss_type'] = args.loss_type
     hp['ksi_intsyn'] = args.ksi
+    hp['device'] = args.device
 
     if hp['n_rnn'] == 84 and hp['reg_term']:
         Distance = np.load('/data_smr/dataset/brain_hcp_data/84/Raw_dis.npy')
@@ -57,7 +63,6 @@ def gen_hp(args):
         hp['Distance'] = ((Distance - min_val) / (max_val - min_val)).float()
     
     return hp
-
 
 
 # https://github.com/gyyang/multitask/blob/master/train.py
@@ -94,101 +99,90 @@ def train(args, writer:SummaryWriter):
     step = 0
     loss_list = []
 
-    fc_list = []
-    while step * hp['batch_size_train'] <= args.max_trials:
-        # Training
-        rule_train_now = hp['rng'].choice(hp['rule_trains'],
-                                            p=hp['rule_probs'])
-        # Generate a random batch of trials.
-        # Each batch has the same trial length
-        trial = task.generate_trials(
-                rule_train_now, hp, 'random',
-                batch_size=hp['batch_size_train'])
-        
-        input = torch.from_numpy(trial.x).to(device)
-        target = torch.from_numpy(trial.y).to(device)
-        c_mask = torch.from_numpy(trial.c_mask).to(device)
+    batch_size = hp['batch_size_train']
 
-        if torch.numel(c_mask) == torch.numel(target):
-            c_mask = c_mask.reshape(target.shape[0], target.shape[1], -1)
-
-        output = model(input)
-        if hp['loss_type'] == 'lsq':
-            output = torch.sigmoid(output)
-            loss = torch.mean(torch.square((target - output) * c_mask))
-        else:
-            _, _, n_output = target.shape
-            target = target.view(-1, n_output)
-            output = output.view(-1, n_output)
-           
-            loss = F.cross_entropy(output, target, reduction='none')      
-            loss = torch.mean(loss * c_mask)
-
-        global hidden_states
-        if args.reg_term:
-            loss += model.comm_loss
-
-        random_value = torch.rand_like(hidden_states) 
-        hidden_states =  hidden_states + random_value * 1e-7
-        hidden_states_mean = hidden_states.detach().mean(1).cpu().numpy()
-        fc = np.corrcoef(hidden_states_mean, rowvar=False)
-        fc_list.append(fc)
-
-        loss_list.append(loss.item())
-        
-        optimizer.zero_grad()
-        loss.backward()
-        
-        optimizer.step()
-        
-        step += 1
-        if conn_mode == 'grow' and step % args.max_steps_per_stage == 0:
-            model.grow_connections(args.add_conn_per_stage)
-        
+    NUM_OF_BATCHES = 28 * 1700
+    train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
+        batch_size, data_dir = './datasets/multitask/train')
     
-        if step % args.display_step == 0:
-            num_trials = step * hp['batch_size_train']
-            
-            # weight = model.recurrent_conn.weight.data.detach().cpu().numpy()
-            weight = model.get_layer_to_analyze()
-            ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
+    train_loader = torch.utils.data.DataLoader(train_dataset, \
+        batch_size = None, num_workers = 2)
+    
+    test_set = task.Get_Testset(hp, \
+        data_dir='./datasets/multitask/test', n_rep = 64)
+    
+    big_batch_test_data = \
+        task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)
 
-            cluster_sizes = Counter(ci)
-            average_cluster_size = sum(cluster_sizes.values()) / ci.max()
-            
-            writer.add_scalar(tag = 'Avg_Cluster_Size', scalar_value = average_cluster_size, global_step = step)
+    while step * hp['batch_size_train'] <= args.max_trials:
+        for idx , (input, target, c_mask) in enumerate(train_loader): 
+            if step * hp['batch_size_train'] > args.max_trials:
+                break
+    
+            input = input.to(device)
+            target = target.to(device)
+            c_mask = c_mask.to(device)
 
-            writer.add_scalar(tag = 'Cluster_Num', scalar_value = ci.max(), global_step = step)
+            output = model(input)
+            if hp['loss_type'] == 'lsq':
+                output = torch.sigmoid(output)
+                loss = torch.mean(torch.square((target - output) * c_mask))
+            else:
+                _, _, n_output = target.shape
+                target = target.view(-1, n_output)
+                output = output.view(-1, n_output)
             
-            writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = step)
+                loss = F.cross_entropy(output, target, reduction='none')      
+                loss = torch.mean(loss * c_mask)
             
-            fc = np.mean(fc_list, 0)
-            fc[ fc < 0 ] = 0
-            _, fc_qvalue = bct.modularity_dir(fc)
-            # _, fc_qvalue = bct.modularity_und(fc) # because fc network is symmetric
-            writer.add_scalar(tag = 'FC_Qvalue', scalar_value = fc_qvalue, global_step = step)
+            global hidden_states
+            if args.reg_term:
+                loss += model.comm_loss
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            loss_list.append(loss.item())
+
+            step += 1
+            if conn_mode == 'grow' and step % args.max_steps_per_stage == 0:
+                model.grow_connections(args.add_conn_per_stage)
             
-            loss_sum = sum(loss_list)
-            writer.add_scalar(tag = 'Loss', scalar_value = loss_sum, global_step = step)
-            
-            print(f'Trials [{num_trials}/{args.max_trials}], Loss: {loss_sum:.3f}, \
-                SC_Qvalue: {sc_qvalue:.3f}, FC_Qvalue: {fc_qvalue:.3f}')
-            
-            log = do_eval(model, rule_train=hp['rule_trains'])
-            
-            writer.add_scalar(tag = 'perf_avg', scalar_value = log['perf_avg'][-1], global_step = step)
-            writer.add_scalar(tag = 'perf_min', scalar_value = log['perf_min'][-1], global_step = step)
-            
-            for list_name, perf_list in log.items():
-                if not 'min' in list_name and not 'avg' in list_name:
-                    writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=step)
-            
-            if args.save_model:
-                torch.save(model, os.path.join(log_dir, f'RNN_interleaved_learning_{step}.pth'))
-            
-            loss_list = []
-            fc_list = []
-            
+            if step % args.display_step == 0:
+                num_trials = step * hp['batch_size_train']
+
+                weight = model.get_layer_to_analyze()
+                ci, sc_qvalue = bct.modularity_dir(np.abs(weight))
+                cluster_sizes = Counter(ci)
+                average_cluster_size = sum(cluster_sizes.values()) / ci.max()
+                writer.add_scalar(tag = 'Avg_Cluster_Size', scalar_value = average_cluster_size, global_step = step)
+                writer.add_scalar(tag = 'Cluster_Num', scalar_value = ci.max(), global_step = step)
+                writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = step)
+                
+                loss_sum = sum(loss_list)
+                writer.add_scalar(tag = 'Loss', scalar_value = loss_sum, global_step = step)
+                
+                print(f'Trials [{num_trials}/{args.max_trials}], Loss: {loss_sum:.3f}, \
+                    SC_Qvalue: {sc_qvalue:.3f}')
+                
+                # log = do_eval(model, rule_train=hp['rule_trains'])
+                # log = do_eval_with_dataset(model, rule_train = \
+                    # hp['rule_trains'], dataset = test_set)
+                log = do_eval_with_dataset_torch_fast(model, \
+                    hp['rules'], big_batch_test_data, verbose=True)
+
+                writer.add_scalar(tag = 'perf_avg', scalar_value = log['perf_avg'][-1], global_step = step)
+                writer.add_scalar(tag = 'perf_min', scalar_value = log['perf_min'][-1], global_step = step)
+                
+                for list_name, perf_list in log.items():
+                    if not 'min' in list_name and not 'avg' in list_name:
+                        writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=step)
+                
+                if args.save_model:
+                    torch.save(model, os.path.join(log_dir, f'RNN_interleaved_learning_{step}.pth'))
+                
+                loss_list = []
+
     handle.remove()
     print("Optimization finished!")
 

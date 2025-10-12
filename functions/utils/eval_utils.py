@@ -1,7 +1,10 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
+import networkx as nx
 import datasets.multitask as task
 from collections import defaultdict
+from typing import List
 import random
 import os
 
@@ -36,6 +39,72 @@ def gen_ortho_matrix(dim, rng=None):
         H = np.dot(H, mat)
     return H
 
+
+# core-periphery organization
+def generate_multi_core_adj_matrix(
+    core_sizes: List[int], 
+    periphery_size: int, 
+    intra_core_prob: float = 0.7, 
+    inter_core_prob: float = 0.1, 
+    core_periphery_prob: float = 0.05, 
+    intra_periphery_prob: float = 0.02, 
+    seed: int = None
+) -> np.ndarray:
+    """
+    通过指定多个核心和连接概率来生成图，并返回其邻接矩阵。
+
+    这个函数使用了随机分块模型 (Stochastic Block Model)。
+
+    Args:
+        core_sizes (List[int]): 一个包含每个核心大小的列表。例如 [30, 25] 代表有两个核心。
+        periphery_size (int): 共享边缘区域的大小。如果不需要边缘，可以设为 0。
+        intra_core_prob (float): 任意一个核心内部节点之间的连接概率 (通常很高)。
+        inter_core_prob (float): 两个不同核心的节点之间的连接概率 (通常中等或较低)。
+        core_periphery_prob (float): 核心节点与边缘节点之间的连接概率 (通常较低)。
+        intra_periphery_prob (float): 边缘内部节点之间的连接概率 (通常非常低)。
+        seed (int, optional): 用于复现结果的随机种子。默认为 None。
+
+    Returns:
+        np.ndarray: 生成图的 NumPy 邻接矩阵。
+    """
+    # 1. 根据输入构建 SBM 的 sizes 参数
+    num_cores = len(core_sizes)
+    sizes = core_sizes.copy()
+    has_periphery = periphery_size > 0
+    if has_periphery:
+        sizes.append(periphery_size)
+    
+    num_blocks = len(sizes)
+    # 2. 根据输入构建 SBM 的 probs 概率矩阵
+    probs = np.full((num_blocks, num_blocks), 0.0)
+    
+    for i in range(num_blocks):
+        for j in range(i, num_blocks):
+            # 对角线元素：块内部的连接概率
+            if i == j:
+                if i < num_cores:  # 这是核心块
+                    prob = intra_core_prob
+                else:  # 这是边缘块
+                    prob = intra_periphery_prob
+            # 非对角线元素：块之间的连接概率
+            else:
+                is_i_core = (i < num_cores)
+                is_j_core = (j < num_cores)
+                
+                if is_i_core and is_j_core:  # 两个不同的核心之间
+                    prob = inter_core_prob
+                else:  # 核心与边缘之间
+                    prob = core_periphery_prob
+            
+            probs[i, j] = probs[j, i] = prob
+
+    # 3. 使用 NetworkX 生成图
+    G = nx.stochastic_block_model(sizes, probs, seed=seed)
+
+    # 4. 将图转换为邻接矩阵并返回
+    return nx.to_numpy_array(G)
+
+
 def popvec(y):
     """Population vector read out.
 
@@ -53,6 +122,30 @@ def popvec(y):
     temp_sin = np.sum(y*np.sin(pref), axis=-1)/temp_sum
     loc = np.arctan2(temp_sin, temp_cos)
     return np.mod(loc, 2*np.pi)
+
+
+def popvec_torch(y):
+    """
+    Population vector read out (PyTorch version).
+    在指定的设备上（CPU或GPU）运行。
+
+    Args:
+        y: Population output. PyTorch Tensor (Batch, Units)
+
+    Returns:
+        Readout locations: PyTorch Tensor (Batch,)
+    """
+    # 确保 pref 张量和输入 y 在同一个设备上
+    device = y.device
+    pref = torch.arange(0, 2 * torch.pi, 2 * torch.pi / y.shape[-1], device=device)  # preferences
+    
+    temp_sum = y.sum(axis=-1)
+    # 使用 PyTorch 函数
+    temp_cos = torch.sum(y * torch.cos(pref), axis=-1) / temp_sum
+    temp_sin = torch.sum(y * torch.sin(pref), axis=-1) / temp_sum
+    loc = torch.arctan2(temp_sin, temp_cos)
+    
+    return torch.remainder(loc, 2 * torch.pi)
     
 def get_perf(y_hat, y_loc):
     """Get performance.
@@ -89,7 +182,43 @@ def get_perf(y_hat, y_loc):
     perf = should_fix * fixating + (1-should_fix) * corr_loc * (1-fixating)
     return perf
 
-def do_eval(model, rule_train):
+
+def get_perf_torch(y_hat, y_loc):
+    """
+    Get performance (PyTorch version).
+    在指定的设备上（CPU或GPU）运行。
+
+    Args:
+      y_hat: Actual output. PyTorch Tensor (Time, Batch, Unit)
+      y_loc: Target output location. PyTorch Tensor (Time, Batch)
+
+    Returns:
+      perf: PyTorch Tensor (Batch,)
+    """
+    if y_hat.ndim == 3:
+        y_loc, y_hat = y_loc[-1], y_hat[-1]
+
+    # Fixation and location of y_hat
+    y_hat_fix = y_hat[..., 0]
+    y_hat_loc = popvec_torch(y_hat[..., 1:]) # 调用 PyTorch 版本的 popvec
+
+    # 在 PyTorch 中，布尔运算结果是 BoolTensor，需要转换为 float 进行数学运算
+    fixating = (y_hat_fix > 0.5).float()
+
+    original_dist = y_loc - y_hat_loc
+    dist = torch.minimum(torch.abs(original_dist), 2 * torch.pi - torch.abs(original_dist))
+    corr_loc = (dist < 0.2 * torch.pi).float()
+
+    # Should fixate?
+    should_fix = (y_loc < 0).float()
+
+    # performance
+    # (1-should_fix) 对应 (y_loc >= 0) 的情况
+    perf = should_fix * fixating + (1 - should_fix) * corr_loc * (1 - fixating)
+    return perf
+
+
+def do_eval(model, rule_train, verbose=False):
     """Do evaluation.
 
     Args:
@@ -136,7 +265,179 @@ def do_eval(model, rule_train):
 
     perf_tests_min = np.min([log['perf_'+r][-1] for r in rule_tmp])
     log['perf_min'].append(perf_tests_min)
-    print('avg'+'  | perf {:0.3f}'.format(perf_tests_mean))
-    print('min'+'  | perf {:0.3f}'.format(perf_tests_min))
+    
+    if verbose:
+        print('avg'+'  | perf {:0.3f}'.format(perf_tests_mean))
+        print('min'+'  | perf {:0.3f}'.format(perf_tests_min))
 
     return log
+
+
+def do_eval_with_dataset(model, rule_train, dataset, verbose = False):
+    """Do evaluation.
+
+    Args:
+        model: Model class instance
+        rule_train: string or list of strings, the rules being trained
+    """
+    log = defaultdict(list)
+    hp = model.hp
+    model.eval()
+
+    for rule_test in hp['rules']:
+        perf_tmp = list()
+        with torch.no_grad():
+            n_rep = len(dataset[rule_test])
+            for i_rep in range(n_rep):
+                input, y_loc = dataset[rule_test][i_rep]    
+                # import pdb
+                # pdb.set_trace()    
+
+                y_hat_test = model(input)
+                if hp['loss_type'] == 'lsq' and not hp['use_snn']:
+                    y_hat_test = torch.sigmoid(y_hat_test).cpu().numpy()
+                else:
+                    y_hat_test = F.softmax(y_hat_test, dim=-1)
+                    y_hat_test = y_hat_test.cpu().numpy()
+                
+                perf_test = np.mean(get_perf(y_hat_test, y_loc))
+                perf_tmp.append(perf_test)
+
+        log['perf_'+rule_test].append(np.mean(perf_tmp, dtype=np.float64))
+    model.train()
+
+    if hasattr(rule_train, '__iter__'):
+        rule_tmp = rule_train
+    else:
+        rule_tmp = [rule_train]
+
+    perf_tests_mean = np.mean([log['perf_'+r][-1] for r in rule_tmp])
+    log['perf_avg'].append(perf_tests_mean)
+
+    perf_tests_min = np.min([log['perf_'+r][-1] for r in rule_tmp])
+    log['perf_min'].append(perf_tests_min)
+    
+    if verbose:
+        print('avg'+'  | perf {:0.3f}'.format(perf_tests_mean))
+        print('min'+'  | perf {:0.3f}'.format(perf_tests_min))
+
+    return log
+
+
+# ==============================================================================
+# 终极方案 全局单次快速评估
+# ==============================================================================
+def do_eval_with_dataset_torch_fast(model, rule_train, global_data, verbose=False):
+    """
+    Performs evaluation in a single shot using globally preprocessed data.
+    This is the fastest possible evaluation method, assuming sufficient VRAM.
+    """
+    log = defaultdict(list)
+    hp = model.hp
+    model.eval()
+
+    with torch.no_grad():
+        # 1. 一次前向传播，覆盖所有数据
+        padded_y_hat = model(global_data['padded_inputs'])
+        if hp['loss_type'] == 'lsq' and not hp['use_snn']:
+            padded_y_hat = torch.sigmoid(padded_y_hat)
+        else:
+            padded_y_hat = F.softmax(padded_y_hat, dim=-1)
+
+        # 2. 一次高级索引
+        device = padded_y_hat.device
+        total_trials = global_data['total_trials']
+        y_hat_last_step = padded_y_hat[global_data['last_step_indices'], torch.arange(total_trials, device=device)]
+        yloc_last_step = global_data['padded_ylocs'][global_data['last_step_indices'], torch.arange(total_trials, device=device)]
+        
+        # 3. 一次性能计算
+        all_perf_values = get_perf_torch(y_hat_last_step, yloc_last_step.to(y_hat_last_step.dtype))
+        
+        # 4. 从总性能向量中切片，计算每个rule的均值
+        for rule, (start, end) in global_data['rule_indices'].items():
+            if rule in hp['rules']: # 确保只记录hp中指定的rules
+                rule_perf = torch.mean(all_perf_values[start:end]).item()
+                log['perf_' + rule].append(rule_perf)
+    
+    model.train()
+    
+    if hasattr(rule_train, '__iter__'): rule_tmp = rule_train
+    else: rule_tmp = [rule_train]
+    perf_tests_mean = np.mean([log['perf_'+r][-1] for r in rule_tmp])
+    perf_tests_min = np.min([log['perf_'+r][-1] for r in rule_tmp])
+
+    log['perf_avg'].append(perf_tests_mean)
+    log['perf_min'].append(perf_tests_min)
+    if verbose: 
+        print(f"avg  | perf {perf_tests_mean:0.3f}")
+        print(f"min  | perf {perf_tests_min:0.3f}")
+    return log
+
+
+if __name__ == '__main__':
+    import time
+    lock_random_seed(2024)
+    n_rnn = 32
+    seed = 200 # 使用一个存在的种子以确保模型文件可被加载
+    load_step = 12000
+    device = torch.device(f'cuda:0' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+
+    model_path = f'./runs/Fig2bcde_data/n_rnn_{n_rnn}_task_20_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
+    
+    if not os.path.exists(model_path):
+        print(f"Error: Model file not found at {model_path}")
+        print("Please ensure the path is correct and the model file exists.")
+        exit()
+
+    trained_model = torch.load(model_path, map_location=device)
+
+    hp = trained_model.hp
+    hp['device'] = device
+    
+    test_set = task.Get_Testset(hp, data_dir='./datasets/multitask/test', n_rep=16)
+
+    # --- 性能和结果比较 ---
+    
+    # NumPy 版本
+    print("\nRunning original NumPy version...")
+    start_time = time.time()
+    log_np = do_eval_with_dataset(trained_model, \
+        hp['rules'], dataset=test_set, verbose=True)
+    end_time = time.time()
+    time_np = end_time - start_time
+    print(f"NumPy version took: {time_np:.4f} seconds")
+    perf_avg_np = log_np['perf_avg'][0]
+
+    # preprocess dataset (only do once) 
+    global_data = task.preprocess_dataset_for_gpu_global(test_set,  hp['rules'], device)
+
+    # Torch 版本 (使用填充)
+    print("\nRunning optimized Torch version (with padding)...")
+    start_time = time.time()
+    log_torch_opt = do_eval_with_dataset_torch_fast(\
+        trained_model, hp['rules'], global_data, verbose=True)
+    end_time = time.time()
+    time_torch_opt = end_time - start_time
+    print(f"Optimized Torch version took: {time_torch_opt:.4f} seconds")
+    perf_avg_torch_opt = log_torch_opt['perf_avg'][0]
+    
+    # --- 结果总结 ---
+    print("\n" + "="*55)
+    print(" " * 20 + "Summary")
+    print("="*55)
+    print(f"Performance (avg):")
+    print(f"  - NumPy version          : {perf_avg_np:.6f}")
+    print(f"  - Torch version  : {perf_avg_torch_opt:.6f}")
+    print("\nExecution Time:")
+    print(f"  - NumPy version          : {time_np:.4f} s")
+    print(f"  - Torch version  : {time_torch_opt:.4f} s")
+    print("\nSpeedup (Optimized vs NumPy)          : {:.2f}x".format(time_np / time_torch_opt))
+    print("="*55)
+    
+    diff = abs(perf_avg_np - perf_avg_torch_opt)
+    print(f"\nAbsolute difference between NumPy and Optimized Torch avg performance: {diff:.8f}")
+    if diff < 1e-2:
+        print("The outputs are consistent, the optimization is correct.")
+    else:
+        print("Warning: The outputs show a noticeable difference. Please check the logic.")
