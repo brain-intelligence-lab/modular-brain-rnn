@@ -1,7 +1,7 @@
 from numpy.random import shuffle
 import torch
 import datasets.multitask as task
-from models.recurrent_models import RNN
+from models.recurrent_models import RNN, GRU, LSTM
 from functions.utils.eval_utils import do_eval, \
     do_eval_with_dataset, do_eval_with_dataset_torch_fast
     
@@ -66,25 +66,34 @@ def gen_hp(args):
 
 
 # https://github.com/gyyang/multitask/blob/master/train.py
-            
 def train(args, writer:SummaryWriter):
     device = args.device
     hp = gen_hp(args)
     rule_prob_map = {'contextdm1': 5, 'contextdm2': 5}
     
-    model = RNN(hp=hp, device=device, rec_scale_factor=args.rec_scale_factor).to(device)
-    handle = model.readout.register_forward_hook(readout_hook)
+    if args.rnn_type == 'RNN':
+        model = RNN(hp=hp, device=device, rec_scale_factor=args.rec_scale_factor).to(device)
+    elif args.rnn_type == 'GRU':
+        model = GRU(hp=hp, device=device, rec_scale_factor=args.rec_scale_factor).to(device)
+    elif args.rnn_type == 'LSTM':
+        model = LSTM(hp=hp, device=device, rec_scale_factor=args.rec_scale_factor).to(device)
+    else:
+        raise NotImplementedError
+
+    # handle = model.readout.register_forward_hook(readout_hook)
     optimizer = torch.optim.Adam(model.parameters(), lr=hp['learning_rate'])
     
     log_dir = writer.logdir
     conn_mode = args.conn_mode 
     
     if conn_mode in ['fixed', 'grow']:
-        model.gen_conn_matrix(wiring_rule=args.wiring_rule)
+        # model.gen_conn_matrix(wiring_rule=args.wiring_rule)
         if conn_mode == 'fixed':
-            if args.module_size_list is not None:
-                model.gen_modular_conn_matrix(args.module_size_list)
-
+            if args.mask_type == 'modular':
+                model.gen_modular_conn_matrix(args.conn_num)
+            else:
+                model.gen_random_conn_matrix(args.conn_num)
+    
             model.fix_connections()
         else:
             model.empty_connections()
@@ -101,21 +110,25 @@ def train(args, writer:SummaryWriter):
 
     batch_size = hp['batch_size_train']
 
-    NUM_OF_BATCHES = 28 * 1700
-    train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
-        batch_size, data_dir = './datasets/multitask/train')
+    NUM_OF_BATCHES = int(args.max_trials // hp['batch_size_train'])
+    if args.read_from_file:
+        train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
+            batch_size, data_dir = './datasets/multitask/train')
+    else:
+        train_dataset = task.Multitask_Batches_Realtime_Gen(hp, NUM_OF_BATCHES, batch_size)
     
     train_loader = torch.utils.data.DataLoader(train_dataset, \
-        batch_size = None, num_workers = 2)
+        batch_size = None, num_workers = 4)
     
     test_set = task.Get_Testset(hp, \
-        data_dir='./datasets/multitask/test', n_rep = 64)
+        data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
     
     big_batch_test_data = \
         task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)
 
     while step * hp['batch_size_train'] <= args.max_trials:
-        for idx , (input, target, c_mask) in enumerate(train_loader): 
+        # for input, target, c_mask, task_name in data_list:
+        for input, target, c_mask in train_loader:
             if step * hp['batch_size_train'] > args.max_trials:
                 break
     
@@ -134,7 +147,7 @@ def train(args, writer:SummaryWriter):
             
                 loss = F.cross_entropy(output, target, reduction='none')      
                 loss = torch.mean(loss * c_mask)
-            
+                
             global hidden_states
             if args.reg_term:
                 loss += model.comm_loss
@@ -159,17 +172,22 @@ def train(args, writer:SummaryWriter):
                 writer.add_scalar(tag = 'Cluster_Num', scalar_value = ci.max(), global_step = step)
                 writer.add_scalar(tag = 'SC_Qvalue', scalar_value = sc_qvalue, global_step = step)
                 
+                weight = torch.from_numpy(weight).to(device) 
+                _, s, _ = torch.linalg.svd(weight)
+                eff_dim = (torch.sum(s)**2) / torch.sum(s**2)
+                writer.add_scalar(tag = 'eff_dim', scalar_value = eff_dim, global_step = step)
+
                 loss_sum = sum(loss_list)
                 writer.add_scalar(tag = 'Loss', scalar_value = loss_sum, global_step = step)
-                
-                print(f'Trials [{num_trials}/{args.max_trials}], Loss: {loss_sum:.3f}, \
-                    SC_Qvalue: {sc_qvalue:.3f}')
+            
+                # print(f'Trials [{num_trials}/{args.max_trials}], Loss: {loss_sum:.3f}, \
+                #     SC_Qvalue: {sc_qvalue:.3f}')
                 
                 # log = do_eval(model, rule_train=hp['rule_trains'])
                 # log = do_eval_with_dataset(model, rule_train = \
-                    # hp['rule_trains'], dataset = test_set)
+                #     hp['rule_trains'], dataset = test_set)
                 log = do_eval_with_dataset_torch_fast(model, \
-                    hp['rules'], big_batch_test_data, verbose=True)
+                    hp['rules'], big_batch_test_data)
 
                 writer.add_scalar(tag = 'perf_avg', scalar_value = log['perf_avg'][-1], global_step = step)
                 writer.add_scalar(tag = 'perf_min', scalar_value = log['perf_min'][-1], global_step = step)
@@ -177,13 +195,13 @@ def train(args, writer:SummaryWriter):
                 for list_name, perf_list in log.items():
                     if not 'min' in list_name and not 'avg' in list_name:
                         writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=step)
-                
+            
                 if args.save_model:
                     torch.save(model, os.path.join(log_dir, f'RNN_interleaved_learning_{step}.pth'))
                 
                 loss_list = []
 
-    handle.remove()
+    # handle.remove()
     print("Optimization finished!")
 
 def get_chance_level(args, writer:SummaryWriter):

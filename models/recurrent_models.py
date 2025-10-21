@@ -1,5 +1,6 @@
 import torch
 from functions.generative_network_modelling.generative_network_modelling import Gen_one_connection
+from  functions.utils.eval_utils import generate_adj_matrix
 import scipy.io
 import numpy as np
 import torch.nn as nn
@@ -40,7 +41,10 @@ class RNN(base_recurrent_model):
             nn.init.orthogonal_(self.recurrent_conn.weight)
         elif hp['w_rec_init'] == 'diag':
             self.recurrent_conn.weight.data = torch.eye(hidden_size, dtype=torch.float32)
-        
+
+        #TODO: add this into hp
+        self.recurrent_conn.weight.data = torch.ones_like(self.recurrent_conn.weight.data)
+
         self.rec_scale_factor = rec_scale_factor
         self.recurrent_conn.weight.data *= self.rec_scale_factor
         self.readout = nn.Linear(hidden_size, n_output)
@@ -84,11 +88,16 @@ class RNN(base_recurrent_model):
         hidden_states = []
 
         self.comm_loss = 0.0  # 重置 comm_loss
+        now_is_val = not self.training
         for t in range(T):
-            if x[t].abs().sum() < 1e-3: 
-                rec_noise = 0.0  # no rec_noise for zero-padding
+            if now_is_val :
+                if x[t].abs().sum() < 1e-3: 
+                    rec_noise = 0.0
+                else:
+                    rec_noise = torch.rand_like(rnn_inputs[t]) * self.sigma
             else:
                 rec_noise = torch.rand_like(rnn_inputs[t]) * self.sigma
+            
             output = self.rnn_activation(rnn_inputs[t] + rec_noise + \
                 nn.functional.linear(self.hidden_state, masked_weights, self.recurrent_conn.bias))
             
@@ -127,29 +136,25 @@ class RNN(base_recurrent_model):
         self.mask_list = mask_list
         self.mask_idx = 0
     
-    def gen_modular_conn_matrix(self, module_size_list):
+    def gen_modular_conn_matrix(self, num_of_conn):
         n = self.hp['n_rnn']
-        mask = np.zeros((n, n), dtype=np.float32) 
-        assert np.sum(module_size_list) <= n
-        
-        # 填充子矩阵到对角线
-        start_index = 0
-        for size in module_size_list:
-            if start_index + size <= n:
-                mask[start_index:start_index + size, start_index:start_index + size] = np.ones((size, size))
-                start_index += size
-        
+        core_list = [ n // 4 for _ in range(2)]
+        periphery_size = n - np.sum(core_list)
+
+        mask = generate_adj_matrix(core_sizes=core_list, periphery_size=periphery_size, \
+            total_connections=num_of_conn, seed=self.hp['seed'])
+
         self.mask_list = [mask]
         self.mask_idx = 0
     
-    # def gen_random_conn_matrix(self, num_of_conn):
-    #     n = self.hp['n_rnn']
-    #     assert num_of_conn <= n * n
-    #     mask = np.zeros((n, n), dtype=np.float32) 
-    #     indices = np.random.choice(n * n, num_of_conn, replace=False)
-    #     np.put(mask, indices, 1)
-    #     self.mask_list = [mask]
-    #     self.mask_idx = 0
+    def gen_random_conn_matrix(self, num_of_conn):
+        n = self.hp['n_rnn']
+        assert num_of_conn <= n * n
+        mask = np.zeros((n, n), dtype=np.float32) 
+        indices = np.random.choice(n * n, num_of_conn, replace=False)
+        np.put(mask, indices, 1)
+        self.mask_list = [mask]
+        self.mask_idx = 0
 
     def update_conn_num(self, add_conn_num):
         self.mask_idx += add_conn_num # 1-index
@@ -188,6 +193,8 @@ class GRU(base_recurrent_model):
         self.readout = nn.Linear(hidden_size, n_output)
 
         self.rec_scale_factor = rec_scale_factor
+
+        self.W_hh.weight.data = torch.ones_like(self.W_hh.weight.data)
         self.W_hh.weight.data *= self.rec_scale_factor
         
         if hp['activation'] == 'softplus':
@@ -210,10 +217,21 @@ class GRU(base_recurrent_model):
         T = x.size(0)
         hidden_states = []
 
+        now_is_val = not self.training
         for t in range(T):
-            r_noise = torch.rand_like(x[t]) * self.sigma
-            z_noise = torch.rand_like(x[t]) * self.sigma
-            h_noise = torch.rand_like(x[t]) * self.sigma
+
+            if now_is_val :
+                if x[t].abs().sum() < 1e-3: 
+                    r_noise, z_noise, h_noise = 0.0, 0.0, 0.0
+                else:
+                    r_noise = torch.rand_like(x[t]) * self.sigma
+                    z_noise = torch.rand_like(x[t]) * self.sigma
+                    h_noise = torch.rand_like(x[t]) * self.sigma
+            else:
+
+                r_noise = torch.rand_like(x[t]) * self.sigma
+                z_noise = torch.rand_like(x[t]) * self.sigma
+                h_noise = torch.rand_like(x[t]) * self.sigma
             
             R = torch.sigmoid(self.W_xr(x[t] + r_noise) + self.W_hr(self.hidden_state))
             Z = torch.sigmoid(self.W_xz(x[t] + z_noise) + self.W_hz(self.hidden_state))
@@ -246,6 +264,8 @@ class LSTM(base_recurrent_model):
         
         self.readout = nn.Linear(hidden_size, n_output)
         self.rec_scale_factor = rec_scale_factor
+
+        self.W_hc.weight.data = torch.ones_like(self.W_hc.weight.data)
         self.W_hc.weight.data *= self.rec_scale_factor
         
         if hp['activation'] == 'softplus':
@@ -269,13 +289,29 @@ class LSTM(base_recurrent_model):
         
         T = x.size(0)
         hidden_states = []
-
+        now_is_val = not self.training
+        
         for t in range(T):
-            I = torch.sigmoid(self.W_xi(x[t]) + self.W_hi(self.hidden_state))
-            F = torch.sigmoid(self.W_xf(x[t]) + self.W_hf(self.hidden_state))
-            O = torch.sigmoid(self.W_xo(x[t]) + self.W_ho(self.hidden_state))
+
+            if now_is_val :
+                if x[t].abs().sum() < 1e-3: 
+                    i_noise, f_noise, o_noise, c_noise = 0.0, 0.0, 0.0, 0.0
+                else:
+                    i_noise = torch.rand_like(x[t]) * self.sigma
+                    f_noise = torch.rand_like(x[t]) * self.sigma
+                    o_noise = torch.rand_like(x[t]) * self.sigma
+                    c_noise = torch.rand_like(x[t]) * self.sigma
+            else:
+                i_noise = torch.rand_like(x[t]) * self.sigma
+                f_noise = torch.rand_like(x[t]) * self.sigma
+                o_noise = torch.rand_like(x[t]) * self.sigma
+                c_noise = torch.rand_like(x[t]) * self.sigma
+
+            I = torch.sigmoid(self.W_xi(x[t] + i_noise) + self.W_hi(self.H))
+            F = torch.sigmoid(self.W_xf(x[t] + f_noise) + self.W_hf(self.H))
+            O = torch.sigmoid(self.W_xo(x[t] + o_noise) + self.W_ho(self.H))
             
-            C_hat = self.activation(self.W_xc(x[t]) + self.W_hc(self.H))
+            C_hat = self.activation(self.W_xc(x[t] + c_noise) + self.W_hc(self.H))
             self.C = F * self.C + I * C_hat
             self.H = O * self.activation(self.C)
             hidden_states.append(self.H)

@@ -27,14 +27,15 @@ def start_parse():
     parser.add_argument('--loss_type', choices=['lsq', 'ce'], default='lsq')
     parser.add_argument('--ksi', default=0.1, type=float)
     parser.add_argument('--rule_set', choices=['all', 'mante', 'oicdmc'], default='all')
-    parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu', 'leakyrelu'], default='softplus')
+    parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu', 'leakyrelu'], default='relu')
     parser.add_argument('--save_model', action='store_true')
     parser.add_argument('--continual_learning', action='store_true')
     parser.add_argument('--task_num', default=20, type=int)
     parser.add_argument('--task_list', nargs='+', help='A list of tasks', default=None)
-    parser.add_argument('--module_size_list', nargs='+', help='A list of module size', default=None)
+    parser.add_argument('--mask_type', choices=['modular', 'random'], default='random')
     parser.add_argument('--reg_term', action='store_true')
     parser.add_argument('--easy_task', action='store_true')
+    parser.add_argument('--read_from_file', action='store_true')
     parser.add_argument('--get_chance_level', action='store_true')
     args = parser.parse_args()
     return args
@@ -44,12 +45,6 @@ if __name__ == '__main__':
     lock_random_seed(seed=args.seed)
     assert args.conn_mode =='full' or args.conn_num != -1
     
-    if args.module_size_list is not None:
-        args.module_size_list = list(map(int, args.module_size_list))
-        assert sum(x for x in args.module_size_list) <= args.n_rnn
-        assert sum(x ** 2 for x in args.module_size_list) <= args.conn_num
-        
-        
     writer = SummaryWriter(log_dir=args.log_dir)
     log_dir = writer.logdir
     device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')

@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-import networkx as nx
 import datasets.multitask as task
 from collections import defaultdict
 from typing import List
@@ -41,68 +40,113 @@ def gen_ortho_matrix(dim, rng=None):
 
 
 # core-periphery organization
-def generate_multi_core_adj_matrix(
-    core_sizes: List[int], 
-    periphery_size: int, 
-    intra_core_prob: float = 0.7, 
-    inter_core_prob: float = 0.1, 
-    core_periphery_prob: float = 0.05, 
-    intra_periphery_prob: float = 0.02, 
+def generate_adj_matrix(
+    core_sizes: List[int],
+    periphery_size: int,
+    total_connections: int,
+    intra_core_weight: float = 0.8,
+    inter_core_weight: float = 0.1,
+    core_periphery_weight: float = 0.08,
+    intra_periphery_weight: float = 0.02,
     seed: int = None
 ) -> np.ndarray:
     """
-    通过指定多个核心和连接概率来生成图，并返回其邻接矩阵。
+    根据给定的总连接数 total_connections 和各区域的连接“密度”权重，生成一个邻接矩阵。
 
-    这个函数使用了随机分块模型 (Stochastic Block Model)。
+    此函数确保生成的图中边的总数恰好为 total_connections。
 
     Args:
-        core_sizes (List[int]): 一个包含每个核心大小的列表。例如 [30, 25] 代表有两个核心。
-        periphery_size (int): 共享边缘区域的大小。如果不需要边缘，可以设为 0。
-        intra_core_prob (float): 任意一个核心内部节点之间的连接概率 (通常很高)。
-        inter_core_prob (float): 两个不同核心的节点之间的连接概率 (通常中等或较低)。
-        core_periphery_prob (float): 核心节点与边缘节点之间的连接概率 (通常较低)。
-        intra_periphery_prob (float): 边缘内部节点之间的连接概率 (通常非常低)。
-        seed (int, optional): 用于复现结果的随机种子。默认为 None。
+        core_sizes (List[int]): 每个核心的大小，例如 [30, 25]。
+        periphery_size (int): 边缘区域的大小。
+        total_connections (int): 图中需要生成的总连接数（边的数量）。
+        intra_core_weight (float): 核心内部连接的相对权重。
+        inter_core_weight (float): 不同核心之间连接的相对权重。
+        core_periphery_weight (float): 核心与边缘之间连接的相对权重。
+        intra_periphery_weight (float): 边缘内部连接的相对权重。
+        seed (int, optional): 用于复现结果的随机种子。
 
     Returns:
         np.ndarray: 生成图的 NumPy 邻接矩阵。
     """
-    # 1. 根据输入构建 SBM 的 sizes 参数
+    # 0. 初始化
+    rng = np.random.default_rng(seed)
     num_cores = len(core_sizes)
-    sizes = core_sizes.copy()
-    has_periphery = periphery_size > 0
-    if has_periphery:
-        sizes.append(periphery_size)
+    total_nodes = sum(core_sizes) + periphery_size
+    # 1. 建立一个从节点ID到其所属块(block)的映射
+    # 例如，core_sizes=[10,5], periphery_size=8
+    # 节点0-9属于块0(核心1), 10-14属于块1(核心2), 15-22属于块2(边缘)
+    node_to_block = np.zeros(total_nodes, dtype=int)
+    start_idx = 0
+    for i, size in enumerate(core_sizes):
+        node_to_block[start_idx : start_idx + size] = i
+        start_idx += size
+    if periphery_size > 0:
+        node_to_block[start_idx:] = num_cores # 边缘区的块ID是最后一个
+
+    # 2. 生成所有可能的连接及其权重
+    possible_edges = []
+    edge_weights = []
     
-    num_blocks = len(sizes)
-    # 2. 根据输入构建 SBM 的 probs 概率矩阵
-    probs = np.full((num_blocks, num_blocks), 0.0)
-    
-    for i in range(num_blocks):
-        for j in range(i, num_blocks):
-            # 对角线元素：块内部的连接概率
-            if i == j:
-                if i < num_cores:  # 这是核心块
-                    prob = intra_core_prob
-                else:  # 这是边缘块
-                    prob = intra_periphery_prob
-            # 非对角线元素：块之间的连接概率
-            else:
-                is_i_core = (i < num_cores)
-                is_j_core = (j < num_cores)
-                
-                if is_i_core and is_j_core:  # 两个不同的核心之间
-                    prob = inter_core_prob
-                else:  # 核心与边缘之间
-                    prob = core_periphery_prob
+    # 遍历所有节点对 (i, j) 
+    for i in range(total_nodes):
+        for j in range(i, total_nodes):
+            block_i = node_to_block[i]
+            block_j = node_to_block[j]
             
-            probs[i, j] = probs[j, i] = prob
+            weight = 0.0
+            # 情况1: 两个节点在同一个块中
+            if block_i == block_j:
+                if block_i < num_cores: # 核心内部
+                    weight = intra_core_weight
+                else: # 边缘内部
+                    weight = intra_periphery_weight
+            # 情况2: 两个节点在不同块中
+            else:
+                is_i_core = (block_i < num_cores)
+                is_j_core = (block_j < num_cores)
+                if is_i_core and is_j_core: # 两个不同核心之间
+                    weight = inter_core_weight
+                else: # 核心与边缘之间
+                    weight = core_periphery_weight
+            
+            if weight > 0.0:
+                possible_edges.append((i, j))
+                edge_weights.append(weight)
+                
+                if j != i:
+                    possible_edges.append((j, i))
+                    edge_weights.append(weight)
 
-    # 3. 使用 NetworkX 生成图
-    G = nx.stochastic_block_model(sizes, probs, seed=seed)
+    if total_connections > len(possible_edges):
+        raise ValueError(
+            f"请求的总连接数 {total_connections} 超过了基于当前权重所能创建的最大连接数 {len(possible_edges)}。"
+        )
 
-    # 4. 将图转换为邻接矩阵并返回
-    return nx.to_numpy_array(G)
+    # 3. 根据权重进行抽样
+    # 将权重转换为概率
+    total_weight = sum(edge_weights)
+    if total_weight == 0:
+        if total_connections > 0: raise ValueError("所有权重均为0，无法生成任何连接。")
+        return np.zeros((total_nodes, total_nodes), dtype=int)
+        
+    probabilities = np.array(edge_weights) / total_weight
+    
+    # 从所有可能的连接中，根据概率不重复地抽取 total_connections 个
+    chosen_indices = rng.choice(
+        len(possible_edges), 
+        size=total_connections, 
+        replace=False, 
+        p=probabilities
+    )
+    
+    # 4. 构建邻接矩阵
+    adj_matrix = np.zeros((total_nodes, total_nodes), dtype=int)
+    for index in chosen_indices:
+        u, v = possible_edges[index]
+        adj_matrix[u, v] = 1
+        
+    return adj_matrix
+
 
 
 def popvec(y):

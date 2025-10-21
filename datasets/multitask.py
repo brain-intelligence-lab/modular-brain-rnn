@@ -1753,6 +1753,7 @@ class Multitask_Batched(torch.utils.data.Dataset):
                 files_with_index.append((index, os.path.join(self.data_dir, f)))
 
         files_with_index.sort(key=lambda x: x[0])
+        files_with_index = files_with_index[:self.num_batches]
         return [path for index, path in files_with_index]
 
     def _generate_and_save_batches(self):
@@ -1840,6 +1841,43 @@ def _check_data_exists(data_dir, num_batches):
     return len(existing_files) >= num_batches
 
 
+
+class Multitask_Batches_Realtime_Gen(torch.utils.data.Dataset):
+    """
+    修改版本: 
+    - 数据按批次(batch)生成
+    """
+    def __init__(self, hp, num_batches, batch_size):
+        self.hp = hp
+        self.batch_size = batch_size
+        self.num_batches = num_batches
+
+
+    def __len__(self):
+        return self.num_batches
+
+    def __getitem__(self, index):
+        assert index < self.num_batches
+        hp = self.hp 
+        task_name_now = hp['rng'].choice(hp['rule_trains'],
+                            p=hp['rule_probs'])
+
+        trial = generate_trials(
+                task_name_now, hp, 'random',
+                batch_size=self.batch_size)
+
+        input_batch = torch.from_numpy(trial.x)
+        target_batch = torch.from_numpy(trial.y)
+        c_mask_batch = torch.from_numpy(trial.c_mask)
+    
+        if torch.numel(c_mask_batch) == torch.numel(target_batch):
+            c_mask_batch = c_mask_batch.reshape(\
+                target_batch.shape[0], target_batch.shape[1], -1)
+        
+        return input_batch, target_batch, c_mask_batch
+
+
+
 def Get_Testset(hp, data_dir, n_rep = 16, batch_size = 32):
     device = hp['device']
     task_list = hp['rules']
@@ -1881,7 +1919,8 @@ def Get_Testset(hp, data_dir, n_rep = 16, batch_size = 32):
                 torch.load(batch_path, map_location='cpu')
                 input_tensor = input_tensor.to(device)
                 batch_sample = (input_tensor, y_loc_numpy)
-                test_set[task_name].append(batch_sample)
+                if task_name in test_set:
+                    test_set[task_name].append(batch_sample)
     
     return test_set
 
