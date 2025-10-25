@@ -23,7 +23,7 @@ def readout_hook(module, input, output):
 
 def gen_hp(args):
     hp = task.get_default_hp(args.rule_set)
-    hp['w_rec_init'] = 'randortho'
+    hp['w_rec_init'] = args.init_mode
     
     if args.continual_learning: 
         assert args.max_trials != 3000000, "too many trials for continual learning!"
@@ -120,11 +120,11 @@ def train(args, writer:SummaryWriter):
     train_loader = torch.utils.data.DataLoader(train_dataset, \
         batch_size = None, num_workers = 4)
     
-    test_set = task.Get_Testset(hp, \
-        data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
+    # test_set = task.Get_Testset(hp, \
+    #     data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
     
-    big_batch_test_data = \
-        task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)
+    # big_batch_test_data = \
+    #     task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)
 
     while step * hp['batch_size_train'] <= args.max_trials:
         # for input, target, c_mask, task_name in data_list:
@@ -180,21 +180,21 @@ def train(args, writer:SummaryWriter):
                 loss_sum = sum(loss_list)
                 writer.add_scalar(tag = 'Loss', scalar_value = loss_sum, global_step = step)
             
-                # print(f'Trials [{num_trials}/{args.max_trials}], Loss: {loss_sum:.3f}, \
-                #     SC_Qvalue: {sc_qvalue:.3f}')
+                print(f'Trials [{num_trials}/{args.max_trials}], Loss: {loss_sum:.3f}, \
+                    SC_Qvalue: {sc_qvalue:.3f}')
                 
                 # log = do_eval(model, rule_train=hp['rule_trains'])
                 # log = do_eval_with_dataset(model, rule_train = \
                 #     hp['rule_trains'], dataset = test_set)
-                log = do_eval_with_dataset_torch_fast(model, \
-                    hp['rules'], big_batch_test_data)
+                # log = do_eval_with_dataset_torch_fast(model, \
+                #     hp['rules'], big_batch_test_data)
 
-                writer.add_scalar(tag = 'perf_avg', scalar_value = log['perf_avg'][-1], global_step = step)
-                writer.add_scalar(tag = 'perf_min', scalar_value = log['perf_min'][-1], global_step = step)
+                # writer.add_scalar(tag = 'perf_avg', scalar_value = log['perf_avg'][-1], global_step = step)
+                # writer.add_scalar(tag = 'perf_min', scalar_value = log['perf_min'][-1], global_step = step)
                 
-                for list_name, perf_list in log.items():
-                    if not 'min' in list_name and not 'avg' in list_name:
-                        writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=step)
+                # for list_name, perf_list in log.items():
+                #     if not 'min' in list_name and not 'avg' in list_name:
+                #         writer.add_scalar(tag=list_name, scalar_value=perf_list[-1], global_step=step)
             
                 if args.save_model:
                     torch.save(model, os.path.join(log_dir, f'RNN_interleaved_learning_{step}.pth'))

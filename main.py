@@ -31,6 +31,7 @@ def start_parse():
     parser.add_argument('--save_model', action='store_true')
     parser.add_argument('--continual_learning', action='store_true')
     parser.add_argument('--task_num', default=20, type=int)
+    parser.add_argument('--init_mode', choices=['randortho', 'diag', 'one_init'], default='randortho')
     parser.add_argument('--task_list', nargs='+', help='A list of tasks', default=None)
     parser.add_argument('--mask_type', choices=['modular', 'random'], default='random')
     parser.add_argument('--reg_term', action='store_true')

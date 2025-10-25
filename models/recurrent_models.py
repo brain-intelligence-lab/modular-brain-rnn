@@ -9,6 +9,18 @@ class base_recurrent_model(nn.Module):
     def __init__(self):
         super(base_recurrent_model, self).__init__()
 
+    def init_recurrent_layer(self, hp):
+        hidden_size = hp['n_rnn']
+
+        if hp['w_rec_init'] == 'randortho':
+            nn.init.orthogonal_(self.recurrent_conn.weight)
+        elif hp['w_rec_init'] == 'diag':
+            self.recurrent_conn.weight.data = torch.eye(hidden_size, dtype=torch.float32)
+        elif hp['w_rec_init'] == 'one_init':
+            self.recurrent_conn.weight.data = torch.ones_like(self.recurrent_conn.weight.data)
+        else:
+            raise NotImplementedError
+
     def set_mask(self, mask):
         pass
     def gen_conn_matrix(self, wiring_rule='distance'):
@@ -36,15 +48,8 @@ class RNN(base_recurrent_model):
         self.rule_readin = nn.Linear(n_rule, hidden_size, bias=False)
         self.hidden_state = 0
         self.recurrent_conn = nn.Linear(hidden_size, hidden_size)
-        
-        if hp['w_rec_init'] == 'randortho':
-            nn.init.orthogonal_(self.recurrent_conn.weight)
-        elif hp['w_rec_init'] == 'diag':
-            self.recurrent_conn.weight.data = torch.eye(hidden_size, dtype=torch.float32)
 
-        #TODO: add this into hp
-        self.recurrent_conn.weight.data = torch.ones_like(self.recurrent_conn.weight.data)
-
+        self.init_recurrent_layer(hp)
         self.rec_scale_factor = rec_scale_factor
         self.recurrent_conn.weight.data *= self.rec_scale_factor
         self.readout = nn.Linear(hidden_size, n_output)
@@ -192,9 +197,9 @@ class GRU(base_recurrent_model):
         
         self.readout = nn.Linear(hidden_size, n_output)
 
+        self.recurrent_conn = self.W_hh
+        self.init_recurrent_layer(hp)
         self.rec_scale_factor = rec_scale_factor
-
-        self.W_hh.weight.data = torch.ones_like(self.W_hh.weight.data)
         self.W_hh.weight.data *= self.rec_scale_factor
         
         if hp['activation'] == 'softplus':
@@ -263,9 +268,10 @@ class LSTM(base_recurrent_model):
         self.W_hc = nn.Linear(hidden_size, hidden_size)
         
         self.readout = nn.Linear(hidden_size, n_output)
-        self.rec_scale_factor = rec_scale_factor
 
-        self.W_hc.weight.data = torch.ones_like(self.W_hc.weight.data)
+        self.recurrent_conn = self.W_hc
+        self.init_recurrent_layer(hp)
+        self.rec_scale_factor = rec_scale_factor
         self.W_hc.weight.data *= self.rec_scale_factor
         
         if hp['activation'] == 'softplus':

@@ -57,8 +57,22 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 3. Install dependencies:
     ```bash
     pip install -r requirements.txt
+
+    # (optional) Only needed by some supplementary experiments
+    # (For CNN, GNN community detection)
     conda install -c conda-forge r-base
     conda install rpy2
+
+    # (optional) Install torch_geometric dependencies (For GNN training)
+    # Install pyg_lib torch_cluster torch_scatter torch_sparse torch_spline_conv 
+    # from https://data.pyg.org/whl/torch-1.13.0%2Bcu117.html
+    # Take pyg_lib for example:
+
+    wget https://data.pyg.org/whl/torch-1.13.0%2Bcu117/pyg_lib-0.4.0%2Bpt113cu117-cp39-cp39-linux_x86_64.whl
+    pip install pyg_lib-0.4.0+pt113cu117-cp39-cp39-linux_x86_64.whl 
+
+    # Then we can install torch_geometric using:
+    pip install torch_geometric
     ```
 
 

@@ -21,14 +21,17 @@ class SiameseNet(nn.Module):
         
 
         
-    def apply_scale_factor(self, scale_factor=0.1, layer_to_scale='conv1'):
+    def apply_scale_factor(self, scale_factor, layers_to_scale, one_init=False):
         with torch.no_grad():
-            target_layer = dict(self.named_modules())[layer_to_scale] 
-            sum_before_scaling = target_layer.weight.data.abs().sum().item()
-            target_layer.weight.data *= scale_factor
-            sum_after_scaling = dict(self.named_modules())[layer_to_scale].weight.data.abs().sum().item()
-            assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "缩放后的权重和不符合预期！"
-            print(f"已将层 '{layer_to_scale}' 的权重乘以缩放)")
+            for layer in layers_to_scale:
+                target_layer = dict(self.named_modules())[layer] 
+                if one_init:
+                    target_layer.weight.data = torch.ones_like(target_layer.weight.data)
+                sum_before_scaling = target_layer.weight.data.abs().sum().item()
+                target_layer.weight.data *= scale_factor
+                sum_after_scaling = dict(self.named_modules())[layer].weight.data.abs().sum().item()
+                assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "缩放后的权重和不符合预期！"
+                print(f"已将层 '{layer}' 的权重乘以缩放)")
         
 
     def forward_one(self, x):

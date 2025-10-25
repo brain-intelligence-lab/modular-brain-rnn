@@ -4,3 +4,4 @@
 *.html
 *.pth
 *runs
+*figures/*/

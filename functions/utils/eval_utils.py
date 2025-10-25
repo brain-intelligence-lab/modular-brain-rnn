@@ -38,6 +38,57 @@ def gen_ortho_matrix(dim, rng=None):
         H = np.dot(H, mat)
     return H
 
+def calculate_modularity_in_r(weight_matrix: np.ndarray, r_script_path:str, verbose:bool=False):
+    import rpy2.robjects as robjects
+    from rpy2.robjects import numpy2ri, default_converter, conversion
+
+
+    assert os.path.exists(r_script_path), f"R script '{r_script_path}' not found."
+
+    np_cv_rules = default_converter + numpy2ri.converter
+    with conversion.localconverter(np_cv_rules):
+        r = robjects.r
+
+        r.source(r_script_path) # 加载 R 脚本
+        lpa_wb_plus_func = robjects.globalenv['LPA_wb_plus']
+        dirt_lpa_func = robjects.globalenv['DIRT_LPA_wb_plus']
+        r_matrix = robjects.conversion.py2rpy(weight_matrix) # 转换为 R 矩阵
+
+        # 调用 R 函数
+        if verbose:
+            print(" 正在调用 LPA_wb_plus(MAT)...") 
+        mod1_result = lpa_wb_plus_func(r_matrix)
+        
+        if verbose:
+            print(" 正在调用 DIRT_LPA_wb_plus(MAT)...") 
+        mod2_result = dirt_lpa_func(r_matrix)
+
+
+    modularity1 = mod1_result['modularity'][0]
+    modularity2 = mod2_result['modularity'][0]
+
+    if verbose:
+        print(f" 模块度结果: LPA_wb_plus = {modularity1}, DIRT_LPA_wb_plus = {modularity2}")
+    
+    return modularity1, modularity2
+
+
+def calculate_modularity_for_fc_layer(weight_in_matrix: np.ndarray, weight_out_matrix:str, verbose:bool=False):
+    import bct
+    # weight_in_matrix: n * m, weight_out_matrix: m * q
+
+    feature_matrix_1 = np.matmul(weight_in_matrix.T, weight_in_matrix)
+
+    feature_matrix_2 = np.matmul(weight_out_matrix, weight_out_matrix.T)
+
+    ci1, modularity1 = bct.modularity_dir(np.abs(feature_matrix_1))
+    ci2, modularity2 = bct.modularity_dir(np.abs(feature_matrix_2))
+
+    if verbose:
+        print(f"mod1:{modularity1}, mod2:{modularity2}")
+    
+    return modularity1, modularity2
+
 
 # core-periphery organization
 def generate_adj_matrix(
