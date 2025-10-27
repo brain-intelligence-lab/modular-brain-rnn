@@ -10,12 +10,12 @@ cleanup() {
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
 
-n_rnns=(64 32 16 8)
+n_rnns=(16 8 64 32)
 task_num=(20)
 gpus=(0 1 2 3 4 5 6 7)
 num_of_gpus=${#gpus[@]}
-seeds=($(seq 1 200))  
-act_fun='relu'
+seeds=($(seq 1 256))  
+act_fun='tanh'
 
 index=0
 for n_rnn in "${n_rnns[@]}"; do
@@ -29,21 +29,24 @@ for n_rnn in "${n_rnns[@]}"; do
         # 启动训练进程
         python main.py \
             --n_rnn $n_rnn \
-            --rec_scale_factor 0.1 \
+            --rec_scale_factor 0.01 \
             --task_num $task_num \
             --gpu $gpu \
+            --display_step 20 \
+            --init_mode one_init \
             --seed $seed \
+            --read_from_file \
             --log_dir $log_dir \
             --non_linearity $act_fun \
-            --max_trials 3000000 &
+            --max_trials 2560000 &
 
         let index+=1
         let index%=num_of_gpus
 
-    if (( seed % 40 == 0 )); then
-        wait  # 等待所有后台任务完成
-        echo "All jobs for n_rnn=$n_rnn with seed=$seed completed at $(date)"
-    fi
+        if (( seed % 32 == 0 )); then
+            wait  # 等待所有后台任务完成
+            echo "All jobs for n_rnn=$n_rnn with seed<=$seed started at $(date)"
+        fi
 
     done
     
