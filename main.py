@@ -2,7 +2,7 @@ import argparse
 import torch
 from functions.utils.eval_utils import lock_random_seed
 from tensorboardX import SummaryWriter
-from multitask_train import train, train_sequential, get_chance_level
+from multitask_train import train, train_sequential, get_chance_level, module_lottery_ticket_hypo
 from datetime import datetime
 import os
 import pdb
@@ -19,7 +19,7 @@ def start_parse():
     parser.add_argument('--add_conn_per_stage', default=0, type=int)
     parser.add_argument('--rec_scale_factor', default=0.5, type=float)
     parser.add_argument('--reg_factor', default=1.0, type=float)
-    parser.add_argument('--load_model', type=str)
+    parser.add_argument('--load_model_path', type=str)
     parser.add_argument('--conn_num', type=int, default=-1)
     parser.add_argument('--conn_mode',choices=['fixed', 'grow', 'full'], default='full')
     parser.add_argument('--rnn_type', choices=['RNN', 'GRU', 'LSTM'], default='RNN')
@@ -33,7 +33,9 @@ def start_parse():
     parser.add_argument('--task_num', default=20, type=int)
     parser.add_argument('--init_mode', choices=['randortho', 'diag', 'one_init'], default='randortho')
     parser.add_argument('--task_list', nargs='+', help='A list of tasks', default=None)
-    parser.add_argument('--mask_type', choices=['modular', 'random'], default='random')
+    parser.add_argument('--mask_type', choices=['prior_modular', 'random', 'posteriori_modular'], default='random')
+    parser.add_argument('--eval_perf', action='store_true')
+    parser.add_argument('--mod_lottery_hypo', action='store_true')
     parser.add_argument('--reg_term', action='store_true')
     parser.add_argument('--easy_task', action='store_true')
     parser.add_argument('--read_from_file', action='store_true')
@@ -59,6 +61,11 @@ if __name__ == '__main__':
         for arg, value in sorted(vars(args).items()):
             f.write(f'{arg}: {value}\n')
     
+    if args.mod_lottery_hypo:
+        module_lottery_ticket_hypo(args, writer=writer)
+        writer.close()
+        exit(0)
+
     if args.get_chance_level:
         get_chance_level(args, writer=writer)
         writer.close()
