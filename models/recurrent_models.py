@@ -117,10 +117,8 @@ class RNN(base_recurrent_model):
         out = self.readout(hidden_states)
         return out
 
-    def gen_conn_matrix(self, wiring_rule='distance'):
-        eta = -3.2
-        gamma = 0.38
-        params = [eta, gamma, 1e-5]
+    def gen_conn_matrix(self, wiring_rule='distance', eta=-3.2):
+        params = [eta, 0.0, 1e-5]
         modelvar = ['powerlaw', 'powerlaw']
         n = self.hp['n_rnn']
         mask = np.zeros((n, n), dtype=np.float32) 
@@ -128,7 +126,7 @@ class RNN(base_recurrent_model):
         if wiring_rule == 'distance':
             assert self.hp['n_rnn'] == 84
             if self.hp['n_rnn'] == 84:
-                Distance = np.load('/data_smr/dataset/brain_hcp_data/84/Raw_dis.npy')
+                Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
             Distance = Distance + 1e-5
         else:
             Distance = None
@@ -141,29 +139,10 @@ class RNN(base_recurrent_model):
         self.mask_list = mask_list
         self.mask_idx = 0
     
-    def gen_modular_conn_matrix(self, num_of_conn):
-        n = self.hp['n_rnn']
-        core_list = [ n // 4 for _ in range(2)]
-        periphery_size = n - np.sum(core_list)
-
-        mask = generate_adj_matrix(core_sizes=core_list, periphery_size=periphery_size, \
-            total_connections=num_of_conn, seed=self.hp['seed'])
-
-        self.mask_list = [mask]
-        self.mask_idx = 0
-    
-    def gen_random_conn_matrix(self, num_of_conn):
-        n = self.hp['n_rnn']
-        assert num_of_conn <= n * n
-        mask = np.zeros((n, n), dtype=np.float32) 
-        indices = np.random.choice(n * n, num_of_conn, replace=False)
-        np.put(mask, indices, 1)
-        self.mask_list = [mask]
-        self.mask_idx = 0
 
     def update_conn_num(self, add_conn_num):
         self.mask_idx += add_conn_num # 1-index
-        # assert self.mask_idx <= self.hp['conn_num'] 
+        assert self.mask_idx <= self.hp['conn_num'] 
         self.mask_idx = min(self.mask_idx, self.hp['conn_num'])
 
 

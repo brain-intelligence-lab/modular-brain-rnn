@@ -2,7 +2,7 @@ import argparse
 import torch
 from functions.utils.eval_utils import lock_random_seed
 from tensorboardX import SummaryWriter
-from multitask_train import train, train_sequential, get_chance_level, module_lottery_ticket_hypo
+from multitask_train import train, get_chance_level, module_lottery_ticket_hypo
 from datetime import datetime
 import os
 import pdb
@@ -18,16 +18,15 @@ def start_parse():
     parser.add_argument('--max_steps_per_stage', default=500, type=int)
     parser.add_argument('--add_conn_per_stage', default=0, type=int)
     parser.add_argument('--rec_scale_factor', default=0.5, type=float)
-    parser.add_argument('--reg_factor', default=1.0, type=float)
     parser.add_argument('--load_model_path', type=str)
     parser.add_argument('--conn_num', type=int, default=-1)
     parser.add_argument('--conn_mode',choices=['fixed', 'grow', 'full'], default='full')
     parser.add_argument('--rnn_type', choices=['RNN', 'GRU', 'LSTM'], default='RNN')
     parser.add_argument('--wiring_rule', choices=['distance', 'random'], default='distance')
     parser.add_argument('--loss_type', choices=['lsq', 'ce'], default='lsq')
-    parser.add_argument('--ksi', default=0.1, type=float)
     parser.add_argument('--rule_set', choices=['all', 'mante', 'oicdmc'], default='all')
     parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu', 'leakyrelu'], default='relu')
+    parser.add_argument('--optimizer', choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--save_model', action='store_true')
     parser.add_argument('--continual_learning', action='store_true')
     parser.add_argument('--task_num', default=20, type=int)
@@ -35,9 +34,9 @@ def start_parse():
     parser.add_argument('--task_list', nargs='+', help='A list of tasks', default=None)
     parser.add_argument('--mask_type', choices=['prior_modular', 'random', 'posteriori_modular'], default='random')
     parser.add_argument('--eval_perf', action='store_true')
+    parser.add_argument('--eval_verbose', action='store_true')
     parser.add_argument('--mod_lottery_hypo', action='store_true')
     parser.add_argument('--reg_term', action='store_true')
-    parser.add_argument('--easy_task', action='store_true')
     parser.add_argument('--read_from_file', action='store_true')
     parser.add_argument('--get_chance_level', action='store_true')
     args = parser.parse_args()
@@ -71,21 +70,8 @@ if __name__ == '__main__':
         writer.close()
         exit(0)
             
-    if args.continual_learning:
-        if args.task_list is None:
-            rule_trains = [['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti',],
-                           ['dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo',],
-                           ['dm1', 'dm2', 'contextdm1', 'contextdm2', 'multidm',],
-                           ['delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm'],
-                           ]
-        else:
-            rule_trains = [[task] for task in args.task_list]
 
-        # rule_trains = [['dm1', 'dm2'], ['delaydm1', 'delaydm2']]
-        train_sequential(args, writer=writer, rule_trains=rule_trains)
-    else:
-
-        train(args, writer=writer)
+    train(args, writer=writer)
     
     writer.close()
         
