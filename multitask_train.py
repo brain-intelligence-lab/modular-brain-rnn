@@ -80,7 +80,7 @@ def train(args, writer:SummaryWriter):
     conn_mode = args.conn_mode 
     
     if conn_mode in ['fixed', 'grow']:
-        model.gen_conn_matrix(wiring_rule=args.wiring_rule)
+        model.gen_conn_matrix(wiring_rule=args.wiring_rule, eta=args.eta)
         if conn_mode == 'fixed':
             model.fix_connections()
         else:

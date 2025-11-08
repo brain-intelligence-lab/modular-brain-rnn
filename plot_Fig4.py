@@ -18,8 +18,8 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 
 def start_parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--incremental_path', default='./runs/Fig4_incremental_learning_alltask_reset', type=str)
-    parser.add_argument('--normal_path', default='./runs/Fig4_interleaved_learning_fixed_reset', type=str)
+    parser.add_argument('--incremental_path', default='./runs/Fig4_incremental_-3.0', type=str)
+    parser.add_argument('--normal_path', default='./runs/Fig4_all-in-one_-3.0', type=str)
     parser.add_argument('--random_mask_path', default='./runs/Fig4_lottery_ticket_hypo_random', type=str)
     parser.add_argument('--prior_mask_path', default='./runs/Fig4_lottery_ticket_hypo_prior_modular', type=str)
     parser.add_argument('--posteriori_mask_path', default='./runs/Fig4_lottery_ticket_hypo_posteriori_modular', type=str)
@@ -169,12 +169,12 @@ def plot_figure4b(args):
         
         color_list = ['#2171A8', '#DA762A']
         axs.set_ylim(0, 0.5)
-        if 'interleaved' in directory_name:
-            color = color_list[0]
-            axs.plot(modularity_mean, label='all-in-one', linewidth=0.25, color=color)
-        else:
+        if 'incremental' in directory_name:
             color = color_list[1]
             axs.plot(modularity_mean, label='incremental', linewidth=0.25, color=color)
+        else:
+            color = color_list[0]
+            axs.plot(modularity_mean, label='all-in-one', linewidth=0.25, color=color)
         
         axs.fill_between(range(modularity_seed_array.shape[1]), modularity_mean - modularity_ste, \
             modularity_mean + modularity_ste, alpha=0.2, color=color)
@@ -216,7 +216,7 @@ def plot_figure4c(args):
                     path = args.incremental_path
                 else:
                     path = args.normal_path
-                model = torch.load(f'{path}/n_rnn_{n_rnn}_seed_{seed}/RNN_interleaved_learning_{step}.pth', device)  
+                model = torch.load(os.path.join(path, f'n_rnn_{n_rnn}_seed_{seed}', f'RNN_interleaved_learning_{step}.pth'), device)  
                     
                 if conn_mode == 'grow':
                     components = find_connected_components(model.mask)
@@ -353,18 +353,17 @@ def plot_figure4e(args):
         plt.title(f'# Hidden Neurons: {model_size}', fontsize=6)
         plt.tight_layout()
         
-        figures_path = './figures/Fig4'
-        if not os.path.exists(figures_path):
-            os.makedirs(figures_path)
-            
-        fig.savefig(f'{figures_path}/Fig4e_{model_size}.jpg', format='jpg', dpi=300)
-        fig.savefig(f'{figures_path}/Fig4e_{model_size}.svg', format='svg', dpi=300)
-
+        fig.savefig(f'./figures/Fig4/Fig4e_{model_size}.jpg', format='jpg', dpi=300)
+        fig.savefig(f'./figures/Fig4/Fig4e_{model_size}.svg', format='svg', dpi=300)
 
 
 if __name__ == '__main__':
+    figures_path = './figures/Fig4'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
+
     args = start_parse()
     plot_figure4b(args)
-    plot_figure4c(args)
-    plot_figure4e(args)
+    # plot_figure4c(args)
+    # plot_figure4e(args)
     

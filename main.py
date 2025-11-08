@@ -23,6 +23,7 @@ def start_parse():
     parser.add_argument('--conn_mode',choices=['fixed', 'grow', 'full'], default='full')
     parser.add_argument('--rnn_type', choices=['RNN', 'GRU', 'LSTM'], default='RNN')
     parser.add_argument('--wiring_rule', choices=['distance', 'random'], default='distance')
+    parser.add_argument('--eta', type=float, default=-3)
     parser.add_argument('--loss_type', choices=['lsq', 'ce'], default='lsq')
     parser.add_argument('--rule_set', choices=['all', 'mante', 'oicdmc'], default='all')
     parser.add_argument('--non_linearity', choices=['tanh', 'softplus', 'relu', 'leakyrelu'], default='relu')

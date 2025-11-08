@@ -8,7 +8,6 @@ import argparse
 import seaborn as sns
 import matplotlib
 import datasets.multitask as task
-from matplotlib import font_manager 
 from tqdm import tqdm
 import re
 import pandas as pd
@@ -17,16 +16,8 @@ import glob
 import os
 import pdb
 
-fonts_path = '~/.conda/myfonts'
-font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
-
-for file in font_files:
-    font_manager.fontManager.addfont(file)
-
-matplotlib.rcParams['font.family'] = 'Myriad Pro'
-plt.rcParams["font.sans-serif"] = 'Myriad Pro'
 matplotlib.rcParams['pdf.fonttype'] = 42
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 def Sample_conn_num(prob_matrix, tot_conn_num):
     n = prob_matrix.shape[0]
@@ -50,75 +41,16 @@ def gnm(Distance, Kseed, eta, gamma, tot_conn_num):
     prob_matrix = prob_matrix / prob_matrix.sum()
     return Sample_conn_num(prob_matrix, tot_conn_num)
 
+def get_target(conn_matrix, Distance):
+    target = []
+    target.append(bct.degrees_und(conn_matrix))
+    target.append(bct_gpu.clustering_coef_bu_gpu(conn_matrix, device=device))
+    target.append(bct_gpu.betweenness_bin_gpu(conn_matrix, device=device))
+    target.append(Distance[conn_matrix > 0])
+    return target
 
-def matching_ind(CIJ):
-    CIJ = bct.utils.binarize(CIJ, copy=True)
-    in_deg = CIJ.sum(0)
-    common_in = np.matmul(CIJ, CIJ.transpose())
-    common_in = (common_in - CIJ)
-    in_or_deg = (in_deg + in_deg.transpose())
-    in_or_deg = (in_or_deg - CIJ) 
-    Min = common_in / in_or_deg 
-    Min[in_or_deg == 0] = 0
+def cal_energy_func(y_target, tot_conn_num, Distance, B, eta_vec, gamma_vec, task_name):
 
-    # 出度匹配
-
-    out_deg = CIJ.sum(1)
-    common_out = np.matmul(CIJ.transpose(), CIJ) 
-    common_out = (common_out - CIJ)
-    out_or_deg = (out_deg + out_deg.transpose())
-    out_or_deg = (out_or_deg - CIJ)
-    Mout = common_out / out_or_deg
-    Mout[out_or_deg==0] = 0
-
-    # 总体匹配
-    Mall = (Min + Mout) / 2
-
-    return Min, Mout, Mall
-
-
-def matching_gen(Distance, FC, eta, gamma, tot_conn_num):
-    A = np.zeros_like(Distance)
-    epsilon = 1e-4
-    Distance += epsilon
-    n = A.shape[0]
-    Fd = ( Distance ** eta ) * FC
-
-    u, v = np.where(np.ones((n, n))) 
-    
-    for _ in range(tot_conn_num):
-
-        _, _, Kseed = matching_ind(A)
-
-        Kseed += epsilon
-
-        Fk = Kseed ** gamma
-
-        Ff = Fd * Fk * np.logical_not(A)
-        
-        C = np.append(0, np.cumsum(Ff[u,v]))
-        C = C / C[-1]
-        r = np.sum(np.random.rand() >= C) - 1
-
-        uu = u[r]
-        vv = v[r]
-        A[uu, vv] = 1
-
-    return A
-
-
-
-def cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, task_name):
-    y_target = []
-    y_target.append(bct.degrees_und(cortex_conn))
-    y_target.append(bct_gpu.clustering_coef_bu_gpu(cortex_conn, device=device))
-    y_target.append(bct_gpu.betweenness_bin_gpu(cortex_conn, device=device))
-    y_target.append(Distance[cortex_conn > 0])
-
-    tot_conn_num = int((cortex_conn > 0).sum())
-    # tot_conn_num = 1000
-
-    num_of_task = len(B)
     params_energy = {}
     min_energy = 100000.0
 
@@ -130,37 +62,33 @@ def cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, task_name):
     for _, (eta, gamma) in enumerate(zip(eta_vec, gamma_vec)):
         params_energy[(eta, gamma)] = []
 
-        for j in range(num_of_task):
-            if 'multitask' in task_name:
-                K = B[j]
-            
-            if 'matching' in task_name:
-                conn_matrix = matching_gen(D, FC=K, eta=eta, gamma=gamma, tot_conn_num=tot_conn_num)
-            else:
-                conn_matrix = gnm(D, K, eta, gamma, tot_conn_num)
+        if 'multitask' in task_name:
+            K = B
 
-            x_target = []
-            x_target.append(bct.degrees_und(conn_matrix))
-            x_target.append(bct_gpu.clustering_coef_bu_gpu(conn_matrix, device=device))
-            x_target.append(bct_gpu.betweenness_bin_gpu(conn_matrix, device=device))
-            x_target.append(Distance[conn_matrix > 0])
+        if 'matching' in task_name:
+            conn_matrix = matching_gen(D, FC=K, eta=eta, gamma=gamma, tot_conn_num=tot_conn_num)
+        else:
+            conn_matrix = gnm(D, K, eta, gamma, tot_conn_num)
 
-            KS = np.zeros((4))
-            for i in range(4):
-                KS[i] = ks_statistic_gpu(x_target[i], y_target[i], device)
+        x_target = get_target(conn_matrix, Distance)
 
-            params_energy[(eta, gamma)].append(KS)
+        KS = np.zeros((4))
+        for i in range(4):
+            KS[i] = ks_statistic_gpu(x_target[i], y_target[i], device)
 
-            if 'multitask' not in task_name:
-                break
-        
+        params_energy[(eta, gamma)].append(KS)
+
         params_energy[(eta, gamma)] = np.array(params_energy[(eta, gamma)])
         min_energy = min(min_energy, np.mean(params_energy[(eta, gamma)].max(1)))
 
         if 'random' in task_name:
             break
 
-    with open(f'./runs/Fig5_fc_energy/{task_name}.txt', 'w') as file:
+    file_path = './runs/Fig5_data/energy'
+    if not os.path.exists(file_path):
+        os.makedirs(file_path)
+    
+    with open(f'{file_path}/{task_name}.txt', 'w') as file:
         for key, list in params_energy.items():
             for KS in list:
                 file.write('%s:%s\n' % (key, KS))
@@ -182,21 +110,19 @@ def get_hidden_states(model):
             batch_size=512)
 
         input = torch.from_numpy(trial.x).to(device)
-        target = torch.from_numpy(trial.y).to(device)
         output = model(input)
 
     handle.remove()
     return hidden_states_list
 
-def pre_process(load_step):
+def pre_process(load_step, num_of_seed:int):
     subjects_conn_data = scipy.io.loadmat('./datasets/brain_hcp_data/84/structureM_use.mat')['structureM_use']
     subjects_conn_data = np.transpose(subjects_conn_data, [2, 0, 1])
     subjects_conn_data = subjects_conn_data.astype(np.float32)
     Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
 
-    seeds_list = [ i for i in range(1, 2)]
     B = []
-    for sid, seed in enumerate(seeds_list):
+    for seed in tqdm(range(1, num_of_seed+1)):
         file_name = f'./runs/Fig5_data/84/n_rnn_84_task_20_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
         model = torch.load(file_name, device)   
         # weights = model.recurrent_conn.weight.data.detach().cpu().numpy()
@@ -217,71 +143,64 @@ def pre_process(load_step):
         
     return subjects_conn_data, Distance, B
     
-def cal_energy(n=30, load_step=10000):
+def cal_energy(num_of_people=20, load_step=10000):
     nruns = 900
+    multi_task_num = 20
+    num_of_seed = (num_of_people + multi_task_num - 1) // multi_task_num
+
     eta_vec = np.linspace(-3.0, 3.0, int(np.sqrt(nruns)))
     gamma_vec = np.linspace(-3.0, 3.0, int(np.sqrt(nruns)))
 
     eta_vec, gamma_vec = np.meshgrid(eta_vec, gamma_vec)
     eta_vec, gamma_vec = eta_vec.ravel(), gamma_vec.ravel()
-    Atgt, Distance, B = pre_process(load_step)
+    Atgt, Distance, B = pre_process(load_step, num_of_seed=num_of_seed)
 
-    n = min(Atgt.shape[0], n)
+    num_of_people = min(Atgt.shape[0], num_of_people)
     fitness_list_dict = {}
-    
-    fitness_list_random = []
-    for p in tqdm(range(n)):
+
+    y_target_list = []
+    for p in tqdm(range(num_of_people)):
         cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, task_name=f'random_{p}')
+        y_target = get_target(cortex_conn, Distance)
+        y_target_list.append(y_target)
+    print("pre_process finished!")
+
+    fitness_list_random = []
+    for p in tqdm(range(num_of_people)):
+        total_conn_num = int((Atgt[p, ...] > 0).sum())
+        y_target = y_target_list[p]
+        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, task_name=f'random_{p}')
         fitness_list_random.append(fitness)
     fitness_list_dict['random'] = fitness_list_random
     
     fitness_list_spatial = []
-    for p in tqdm(range(n)):
-        cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, f'spatial_{p}')
+    for p in tqdm(range(num_of_people)):
+        total_conn_num = int((Atgt[p, ...] > 0).sum())
+        y_target = y_target_list[p]
+        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, f'spatial_{p}')
         fitness_list_spatial.append(fitness)
     fitness_list_dict['spatial'] = fitness_list_spatial
 
     fitness_list_multitask = []
-    for p in tqdm(range(n)):
-        cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, f'multitask_{p}')
+    for p in tqdm(range(num_of_people)):
+        total_conn_num = int((Atgt[p, ...] > 0).sum())
+        y_target = y_target_list[p]
+        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, f'multitask_{p}')
         fitness_list_multitask.append(fitness)
     fitness_list_dict['multitask'] = fitness_list_multitask
 
     fitness_list_spatial_multitask = []
-    for p in tqdm(range(n)):
-        cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, f'spatial_multitask_{p}')
+    for p in tqdm(range(num_of_people)):
+        total_conn_num = int((Atgt[p, ...] > 0).sum())
+        y_target = y_target_list[p]
+        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, f'spatial_multitask_{p}')
         fitness_list_spatial_multitask.append(fitness)
     fitness_list_dict['spatial_multitask'] = fitness_list_spatial_multitask
     
-    fitness_list_matching = []
-    for p in tqdm(range(n)):
-        cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, f'matching_{p}')
-        fitness_list_matching.append(fitness)
-    fitness_list_dict['matching'] = fitness_list_matching
-
-    fitness_list_spatial_matching = []
-    for p in tqdm(range(n)):
-        cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, f'spatial_matching_{p}')
-        fitness_list_spatial_matching.append(fitness)
-    fitness_list_dict['spatial_matching'] = fitness_list_spatial_matching
-
-    fitness_list_spatial_matching_multitask = []
-    for p in tqdm(range(n)):
-        cortex_conn = Atgt[p, ...]
-        fitness = cal_energy_func(cortex_conn, Distance, B, eta_vec, gamma_vec, f'spatial_matching_multitask_{p}')
-        fitness_list_spatial_matching_multitask.append(fitness)
-    fitness_list_dict['spatial_matching_multitask'] = fitness_list_spatial_matching_multitask
-
     return fitness_list_dict
 
 
-def read_func(file_name, directory_path = './runs/Fig5_fc_energy/', return_KS=False):
+def read_func(file_name, directory_path = './runs/Fig5_data/energy/', return_KS=False):
     file_pattern = os.path.join(directory_path, file_name)
     file_path_list = glob.glob(file_pattern)
     min_energy_list = []
@@ -329,7 +248,7 @@ def read_func(file_name, directory_path = './runs/Fig5_fc_energy/', return_KS=Fa
 
 def plot_figure5c():
     model_list = ['random', 'spatial', 'multitask', 'spatial_multitask']
-    modelname_map = {'random':'random', 'spatial':'spatial', 'multitask':'task', 'spatial_multitask':'spatial+task', 'matching':'matching*', 'spatial_matching':'matching'}
+    modelname_map = {'random':'random', 'spatial':'spatial', 'multitask':'task', 'spatial_multitask':'spatial+task'}
     # property_name = ['degree', 'clustering', 'betweenness\ncentrality', 'edge\nlength']
     property_name = ['degree', 'clustering', 'betweenness centrality', 'edge length']
     data_dict = {}
@@ -367,7 +286,7 @@ def plot_figure5c():
     
 
     ax = sns.stripplot(x='Property', y='KS statistic', hue='Generative model', data=df, 
-                dodge=True, ax=ax, palette=palette, jitter=0.1, size=0.8, color='black', alpha=0.4, legend=False)
+                dodge=True, ax=ax, palette=palette, jitter=0.1, size=0.8, color='black', alpha=0.4)
     
     generative_model_name = ['random', 'spatial', 'task', 'spatial+task']
 
@@ -398,55 +317,54 @@ def plot_figure5c():
     plt.savefig('./figures/Fig5/Fig5c.svg', format='svg', dpi=300)
     
 
-def get_dist(cortex_conns, Distance, B, para_list, task_name, tot_dist_num = 20, property = 'edge length'):
+def get_dist(cortex_conns, Distance, B, para_list, task_name, num_of_dist, property = 'edge length'):
     D = np.ones_like(Distance)
     K = np.ones_like(Distance)
     if 'spatial' in task_name:
         D = Distance
 
-    num_of_task = len(B) if 'multitask' in task_name else 1
-    num_of_people = tot_dist_num // num_of_task
-    
     dist_list = []
-    for i in range(num_of_people):
+    for i in range(num_of_dist):
         tot_conn_num = int((cortex_conns[i] > 0).sum())
         (eta, gamma) = para_list[i]
-        for j in range(num_of_task):
-            if 'multitask' in task_name:
-                K = B[j]
-            
-            conn_matrix = gnm(D, K, eta, gamma, tot_conn_num)
+        if 'multitask' in task_name:
+            K = B[i]
+        
+        conn_matrix = gnm(D, K, eta, gamma, tot_conn_num)
 
-            if property == 'degree':
-                dist_list.append(bct.degrees_und(conn_matrix))
-            elif property == 'clustering':
-                dist_list.append(bct_gpu.clustering_coef_bu_gpu(conn_matrix, device=device))
-            elif property == 'betweenness centrality':
-                dist_list.append(bct_gpu.betweenness_bin_gpu(conn_matrix, device=device))
-            elif property=='edge length':
-                dist_list.append(Distance[ conn_matrix > 0 ])
-            else:
-                raise NotImplementedError
-            
+        if property == 'degree':
+            dist_list.append(bct.degrees_und(conn_matrix))
+        elif property == 'clustering':
+            dist_list.append(bct_gpu.clustering_coef_bu_gpu(conn_matrix, device=device))
+        elif property == 'betweenness centrality':
+            dist_list.append(bct_gpu.betweenness_bin_gpu(conn_matrix, device=device))
+        elif property=='edge length':
+            dist_list.append(Distance[ conn_matrix > 0 ])
+        else:
+            raise NotImplementedError
+
     return np.concatenate(dist_list)
 
-def plot_figure5defg(load_step, property='edge length'):    
-    tot_dist_num = 20
+def plot_figure5defg(args, property='edge length'):    
+    multi_task_num = 20
+    num_of_seed = (args.people_num + multi_task_num - 1) // multi_task_num
 
-    subjects_conn_data, Distance, B = pre_process(load_step=load_step)
+    subjects_conn_data, Distance, B = pre_process(load_step=args.load_step, num_of_seed=num_of_seed)
+    num_of_dist = min(subjects_conn_data.shape[0], args.people_num)
+
     model_dist = {}
     
     _, min_param = read_func(f'spatial_[0-9]*', return_KS=True)
-    model_dist['spatial'] = get_dist(subjects_conn_data, Distance, B, min_param, 'spatial', tot_dist_num, property)
+    model_dist['spatial'] = get_dist(subjects_conn_data, Distance, B, min_param, 'spatial', num_of_dist, property)
 
     _, min_param = read_func(f'multitask_[0-9]*', return_KS=True)
-    model_dist['task'] = get_dist(subjects_conn_data, Distance, B, min_param, 'multitask', tot_dist_num, property)
+    model_dist['task'] = get_dist(subjects_conn_data, Distance, B, min_param, 'multitask', num_of_dist, property)
     
     _, min_param = read_func(f'spatial_multitask_[0-9]*', return_KS=True)
-    model_dist['spatial+task'] = get_dist(subjects_conn_data, Distance, B, min_param, 'spatial_multitask', tot_dist_num, property)
+    model_dist['spatial+task'] = get_dist(subjects_conn_data, Distance, B, min_param, 'spatial_multitask', num_of_dist, property)
     
     ground_truth_dist = []
-    for i in range(tot_dist_num):
+    for i in range(num_of_dist):
         if property == 'degree':
             ground_truth_dist.append(bct.degrees_und(subjects_conn_data[i]))
         elif property == 'clustering':
@@ -454,7 +372,7 @@ def plot_figure5defg(load_step, property='edge length'):
         elif property == 'betweenness centrality':
             ground_truth_dist.append(bct_gpu.betweenness_bin_gpu(subjects_conn_data[i], device=device))
         elif property=='edge length':
-            ground_truth_dist.append(Distance[ subjects_conn_data[i]> 0 ])
+            ground_truth_dist.append(Distance[subjects_conn_data[i]> 0])
         else:
             raise NotImplementedError
     
@@ -504,7 +422,6 @@ def plot_figure5defg(load_step, property='edge length'):
 
 
 def plot_figure5b(fitness_list_dict):
-    # model_list = ['random', 'spatial', 'multitask', 'spatial_multitask', 'matching', 'spatial_matching', 'spatial_matching_multitask']
     model_list = ['random', 'spatial', 'multitask', 'spatial_multitask',]
     modelname_map = {'random':'random', 'spatial':'spatial', 'multitask':'task', 'spatial_multitask':'spatial+task', 'matching':'matching*', 'spatial_matching':'matching'}
     data = []
@@ -560,21 +477,29 @@ def plot_figure5b(fitness_list_dict):
 
 def start_parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--people_num', default=30, type=int)
+    parser.add_argument('--people_num', default=200, type=int)
     parser.add_argument('--nruns', default=900, type=int)
-    parser.add_argument('--load_step', default=20000, type=int)
+    parser.add_argument('--load_step', default=40000, type=int)
+    parser.add_argument('--read_from_file', action='store_true')
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
 
-    lock_random_seed(2024)
+    figures_path = './figures/Fig5'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
+
+    lock_random_seed(2025)
     args = start_parse()
-    # fitness_list_dict = cal_energy(n = args.people_num, load_step = args.load_step)
-    fitness_list_dict = None
+    if args.read_from_file:
+        fitness_list_dict = None
+    else:
+        fitness_list_dict = cal_energy(num_of_people = args.people_num, load_step = args.load_step)
+    
     plot_figure5b(fitness_list_dict)
     plot_figure5c()    
     property_list = ['degree', 'clustering', 'betweenness centrality', 'edge length']
-    xlim_list =  [(0, 60), (0.2, 1.3), (0, 400), (0, 60)]
+
     for i, property in enumerate(property_list):
-        plot_figure5defg(args.load_step, property)
+        plot_figure5defg(args, property)
