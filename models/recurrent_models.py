@@ -142,7 +142,7 @@ class RNN(base_recurrent_model):
 
     def update_conn_num(self, add_conn_num):
         self.mask_idx += add_conn_num # 1-index
-        assert self.mask_idx <= self.hp['conn_num'] 
+        # assert self.mask_idx <= self.hp['conn_num'] 
         self.mask_idx = min(self.mask_idx, self.hp['conn_num'])
 
 

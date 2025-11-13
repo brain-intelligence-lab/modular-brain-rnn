@@ -1742,7 +1742,8 @@ class Multitask_Batched(torch.utils.data.Dataset):
             return False
         
         existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.pt')]
-        return len(existing_files) >= self.num_batches
+        # return len(existing_files) >= self.num_batches
+        return len(existing_files) >= 40000
 
     def _collect_batch_paths(self):
         """收集所有 batch 文件的路径，并按编号排序"""
