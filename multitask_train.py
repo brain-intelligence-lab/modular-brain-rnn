@@ -1,9 +1,9 @@
-from numpy.random import shuffle
 import torch
 import datasets.multitask as task
 from models.recurrent_models import RNN, GRU, LSTM
 from functions.utils.eval_utils import do_eval, \
-    do_eval_with_dataset_torch_fast, generate_adj_matrix
+    do_eval_with_dataset_torch_fast
+from functions.utils.math_utils import generate_adj_matrix
     
 import torch.nn.functional as F
 import numpy as np
@@ -11,8 +11,6 @@ from collections import Counter
 import os
 from tensorboardX import SummaryWriter
 import bct
-import itertools
-from tqdm import tqdm
 import pdb
 
 hidden_states = None
@@ -101,7 +99,7 @@ def train(args, writer:SummaryWriter):
     NUM_OF_BATCHES = int(args.max_trials // hp['batch_size_train'])
     if args.read_from_file:
         train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
-            batch_size, data_dir = './datasets/multitask/train')
+            batch_size, data_dir = '/data_nv/dataset/multitask/train')
     else:
         train_dataset = task.Multitask_Batches_Realtime_Gen(hp, NUM_OF_BATCHES, batch_size)
     
@@ -110,7 +108,7 @@ def train(args, writer:SummaryWriter):
     
     if args.eval_perf and args.read_from_file:
         test_set = task.Get_Testset(hp, \
-            data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
+            data_dir='/data_nv/dataset/multitask/test', n_rep=32, batch_size=16)
         
         big_batch_test_data = \
             task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)
@@ -244,7 +242,7 @@ def module_lottery_ticket_hypo(args, writer):
     load_model_path = args.load_model_path
     
     mask = None
-    for load_step in range(200, 40020, 200):
+    for load_step in range(500, 47000, 500):
         # trained_model = torch.load(f'runs/Fig2bcde_data/n_rnn_{n_rnn}_task_{task_num}_seed_{original_seed}/RNN_interleaved_learning_{load_step}.pth', device)
         path = os.path.join(load_model_path, f"RNN_interleaved_learning_{load_step}.pth")
         trained_model = torch.load(path, device) 
@@ -369,7 +367,7 @@ def module_lottery_ticket_hypo(args, writer):
     NUM_OF_BATCHES = int(args.max_trials // hp['batch_size_train'])
     if args.read_from_file:
         train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
-            batch_size, data_dir = './datasets/multitask/train')
+            batch_size, data_dir = '/data_nv/dataset/multitask/train')
     else:
         train_dataset = task.Multitask_Batches_Realtime_Gen(hp, NUM_OF_BATCHES, batch_size)
     
@@ -378,7 +376,7 @@ def module_lottery_ticket_hypo(args, writer):
     
     if args.eval_perf and args.read_from_file:
         test_set = task.Get_Testset(hp, \
-            data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
+            data_dir='/data_nv/dataset/multitask/test', n_rep=32, batch_size=16)
         
         big_batch_test_data = \
             task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)

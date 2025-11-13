@@ -3,45 +3,13 @@ import torch.nn.functional as F
 import numpy as np
 import datasets.multitask as task
 from collections import defaultdict
-from typing import List
-import random
+import bct
 import os
 
-def lock_random_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = "myseed"  # str(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-
-def gen_ortho_matrix(dim, rng=None):
-    """Generate random orthogonal matrix
-    Taken from scipy.stats.ortho_group
-    Copied here from compatibilty with older versions of scipy
-    """
-    H = np.eye(dim)
-    for n in range(1, dim):
-        if rng is None:
-            x = np.random.normal(size=(dim-n+1,))
-        else:
-            x = rng.normal(size=(dim-n+1,))
-        # random sign, 50/50, but chosen carefully to avoid roundoff error
-        D = np.sign(x[0])
-        x[0] += D*np.sqrt((x*x).sum())
-        # Householder transformation
-        Hx = -D*(np.eye(dim-n+1) - 2.*np.outer(x, x)/(x*x).sum())
-        mat = np.eye(dim)
-        mat[n-1:, n-1:] = Hx
-        H = np.dot(H, mat)
-    return H
 
 def calculate_modularity_in_r(weight_matrix: np.ndarray, r_script_path:str, verbose:bool=False):
     import rpy2.robjects as robjects
     from rpy2.robjects import numpy2ri, default_converter, conversion
-
 
     assert os.path.exists(r_script_path), f"R script '{r_script_path}' not found."
 
@@ -74,7 +42,6 @@ def calculate_modularity_in_r(weight_matrix: np.ndarray, r_script_path:str, verb
 
 
 def calculate_modularity_for_fc_layer(weight_in_matrix: np.ndarray, weight_out_matrix:str, verbose:bool=False):
-    import bct
     # weight_in_matrix: n * m, weight_out_matrix: m * q
 
     feature_matrix_1 = np.matmul(weight_in_matrix.T, weight_in_matrix)
@@ -90,113 +57,18 @@ def calculate_modularity_for_fc_layer(weight_in_matrix: np.ndarray, weight_out_m
     return modularity1, modularity2
 
 
-# core-periphery organization
-def generate_adj_matrix(
-    core_sizes: List[int],
-    periphery_size: int,
-    total_connections: int,
-    intra_core_weight: float = 0.8,
-    inter_core_weight: float = 0.1,
-    core_periphery_weight: float = 0.08,
-    intra_periphery_weight: float = 0.02,
-    seed: int = None
-) -> np.ndarray:
-    """
-    根据给定的总连接数 total_connections 和各区域的连接“密度”权重，生成一个邻接矩阵。
+class ActivationHook:
+    def __init__(self):
+        self.activations = []
 
-    此函数确保生成的图中边的总数恰好为 total_connections。
-
-    Args:
-        core_sizes (List[int]): 每个核心的大小，例如 [30, 25]。
-        periphery_size (int): 边缘区域的大小。
-        total_connections (int): 图中需要生成的总连接数（边的数量）。
-        intra_core_weight (float): 核心内部连接的相对权重。
-        inter_core_weight (float): 不同核心之间连接的相对权重。
-        core_periphery_weight (float): 核心与边缘之间连接的相对权重。
-        intra_periphery_weight (float): 边缘内部连接的相对权重。
-        seed (int, optional): 用于复现结果的随机种子。
-
-    Returns:
-        np.ndarray: 生成图的 NumPy 邻接矩阵。
-    """
-    # 0. 初始化
-    rng = np.random.default_rng(seed)
-    num_cores = len(core_sizes)
-    total_nodes = sum(core_sizes) + periphery_size
-    # 1. 建立一个从节点ID到其所属块(block)的映射
-    # 例如，core_sizes=[10,5], periphery_size=8
-    # 节点0-9属于块0(核心1), 10-14属于块1(核心2), 15-22属于块2(边缘)
-    node_to_block = np.zeros(total_nodes, dtype=int)
-    start_idx = 0
-    for i, size in enumerate(core_sizes):
-        node_to_block[start_idx : start_idx + size] = i
-        start_idx += size
-    if periphery_size > 0:
-        node_to_block[start_idx:] = num_cores # 边缘区的块ID是最后一个
-
-    # 2. 生成所有可能的连接及其权重
-    possible_edges = []
-    edge_weights = []
-    
-    # 遍历所有节点对 (i, j) 
-    for i in range(total_nodes):
-        for j in range(i, total_nodes):
-            block_i = node_to_block[i]
-            block_j = node_to_block[j]
-            
-            weight = 0.0
-            # 情况1: 两个节点在同一个块中
-            if block_i == block_j:
-                if block_i < num_cores: # 核心内部
-                    weight = intra_core_weight
-                else: # 边缘内部
-                    weight = intra_periphery_weight
-            # 情况2: 两个节点在不同块中
-            else:
-                is_i_core = (block_i < num_cores)
-                is_j_core = (block_j < num_cores)
-                if is_i_core and is_j_core: # 两个不同核心之间
-                    weight = inter_core_weight
-                else: # 核心与边缘之间
-                    weight = core_periphery_weight
-            
-            if weight > 0.0:
-                possible_edges.append((i, j))
-                edge_weights.append(weight)
-                
-                if j != i:
-                    possible_edges.append((j, i))
-                    edge_weights.append(weight)
-
-    if total_connections > len(possible_edges):
-        raise ValueError(
-            f"请求的总连接数 {total_connections} 超过了基于当前权重所能创建的最大连接数 {len(possible_edges)}。"
-        )
-
-    # 3. 根据权重进行抽样
-    # 将权重转换为概率
-    total_weight = sum(edge_weights)
-    if total_weight == 0:
-        if total_connections > 0: raise ValueError("所有权重均为0，无法生成任何连接。")
-        return np.zeros((total_nodes, total_nodes), dtype=int)
-        
-    probabilities = np.array(edge_weights) / total_weight
-    
-    # 从所有可能的连接中，根据概率不重复地抽取 total_connections 个
-    chosen_indices = rng.choice(
-        len(possible_edges), 
-        size=total_connections, 
-        replace=False, 
-        p=probabilities
-    )
-    
-    # 4. 构建邻接矩阵
-    adj_matrix = np.zeros((total_nodes, total_nodes), dtype=int)
-    for index in chosen_indices:
-        u, v = possible_edges[index]
-        adj_matrix[u, v] = 1
-        
-    return adj_matrix
+    def __call__(self, module, input, output):
+        """
+        The hook function executed when `readout` is called.
+        Input[0] is the (T, B, H) hidden_states tensor.
+        """
+        # We need to detach and clone to avoid issues with the computation graph
+        # and to store the tensor outside of the hook's scope.
+        self.activations.append(input[0].detach().clone())
 
 
 
@@ -471,6 +343,7 @@ def do_eval_with_dataset_torch_fast(model, rule_train, global_data, verbose=Fals
 
 if __name__ == '__main__':
     import time
+    from math_utils import lock_random_seed
     lock_random_seed(2024)
     n_rnn = 32
     seed = 200 # 使用一个存在的种子以确保模型文件可被加载

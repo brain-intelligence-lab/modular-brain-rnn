@@ -1,198 +1,61 @@
 import numpy as np 
 import matplotlib
-from matplotlib import font_manager 
 import matplotlib.pyplot as plt
 import pdb
 import bct
 import torch
 import matplotlib.cm as cm
-import tensorflow as tf
+from functions.utils.plot_utils import plot_fig, get_seed_avg
 import scipy.stats as stats
+import pandas as pd
+import pickle
+import seaborn as sns
 import os
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
-
-def list_files(directory, name):
-    path_list = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if '.pth' in file or '.txt' in file:
-                continue
-            if name == root.split('/')[-1]:
-                path_list.append(os.path.join(root, file))
-
-    if len(path_list) == 1:
-        return path_list[0]
-    return None
-
-
-def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False):
-    seed_paths_list = []
-    for s_idx, seed_name in enumerate(seed_list):
-        if chance_flag:
-            file_name = f"chance_n_rnn_{model_size}_task_{task}_seed_{seed_name}"
-        else:
-            file_name = f"n_rnn_{model_size}_task_{task}_seed_{seed_name}"
-        paths = list_files(directory_name, file_name)
-        seed_paths_list.append(paths)
-
-    modularity_seed_array = []
-    perf_avg_seed_array = []
-    for ii, events_file in enumerate(seed_paths_list):
-        modularity_list = [0]
-        perf_avg_list = [0]
-        for e in tf.compat.v1.train.summary_iterator(events_file):
-            for v in e.summary.value:
-                if v.tag == 'SC_Qvalue':
-                    modularity_list.append(v.simple_value)
-                if v.tag == 'perf_avg':
-                    perf_avg_list.append(v.simple_value)
-        
-        modularity_seed_array.append(modularity_list)
-        perf_avg_seed_array.append(perf_avg_list)
-        
-    modularity_seed_array = np.array(modularity_seed_array)
-    perf_avg_seed_array = np.array(perf_avg_seed_array)
-    perf_avg_mean = np.mean(perf_avg_seed_array, axis=0)
-    modularity_mean = np.mean(modularity_seed_array, axis=0)
-    print(f'model_size:{model_size}, avg_perf:{perf_avg_mean.mean():.4f}, avg_moduarlity:{modularity_mean.mean():.4f}')    
-    return modularity_seed_array, perf_avg_seed_array
-
-def plot_fig(directory_name, seed_list, task_name_list, model_size_list, \
-    ylabel, plot_perf=True, linelabel=None, color_dict=None, chance_flag=False):
-
-    for model_idx, model_size in enumerate(model_size_list):
-        modularity_all_array = []
-        perf_avg_all_array = []
-        
-        for task_idx, task_name in enumerate(task_name_list):
-            modularity_seed_array, perf_avg_seed_array = get_seed_avg(directory_name, \
-                model_size, task=task_name, seed_list=seed_list, chance_flag=chance_flag)
-
-            modularity_all_array.append(modularity_seed_array)
-            perf_avg_all_array.append(perf_avg_seed_array)
-        
-
-        epochs_num = perf_avg_all_array[0].shape[-1]
-        modularity_all_array = np.array(modularity_all_array).reshape(-1, epochs_num)
-        perf_avg_all_array = np.array(perf_avg_all_array).reshape(-1, epochs_num)
-        
-        modularity_mean = np.mean(modularity_all_array, axis=0)
-        modularity_std = np.std(modularity_all_array, axis=0)
-        modularity_ste = modularity_std / np.sqrt(modularity_all_array.shape[0])
-        
-        perf_avg_mean = np.mean(perf_avg_all_array, axis=0)
-        perf_avg_std = np.std(perf_avg_all_array, axis=0)
-        perf_avg_ste = perf_avg_std / np.sqrt(perf_avg_all_array.shape[0])
-
-        # 生成要显示的标签位置
-        x_ticks = [i for i in range(20, perf_avg_seed_array.shape[1]+1, 20)]
-        x_ticks = [0] + x_ticks
-        x_tick_labels = [500*i for i in x_ticks]
-        
-        if plot_perf:
-            # 从颜色映射中获取颜色
-            color = color_dict[model_size]
-            label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel
-            label = None if chance_flag else label
-            plt.plot(perf_avg_mean, label = label, \
-                color=color, linewidth=0.25, linestyle=(0, (2, 5)) if chance_flag else '-')
-            
-            plt.xticks(ticks=x_ticks, labels=x_tick_labels, fontsize=6)
-            y_ticks = np.arange(0.0, 1.1, 0.2)  # 注意，终点设置为1.1以包括1.0
-            plt.ylim([0.0, 1.0])  # 设置y轴的范围从0.0到1.0
-            y_ticks_labels = [f"{tick:.1f}" for tick in y_ticks]  # 格式化标签为一位小数
-            plt.yticks(ticks=y_ticks, labels=y_ticks_labels, fontsize=6)        
-            plt.ylabel(f'{ylabel}', fontsize=7)
-            if not chance_flag:
-                plt.fill_between(range(perf_avg_seed_array.shape[1]), perf_avg_mean - perf_avg_ste,\
-                    perf_avg_mean + perf_avg_ste, color=color, alpha=0.2)
-        else:
-            if 'Multi' in linelabel:
-                last_key, color = next(reversed(color_dict.items()))
-            else:
-                first_key, color = next(iter(color_dict.items()))
-
-            label = f'# Hidden Neurons: {model_size}' if linelabel is None else linelabel
-            label = None if chance_flag else label    
-            plt.plot(modularity_mean, label = label, \
-                color=color, linewidth=0.25, linestyle=':' if chance_flag else '-')
-            plt.xticks(ticks=x_ticks, labels=x_tick_labels, fontsize=6)
-
-            y_ticks = np.arange(0.0, 0.30, 0.05)  
-            plt.ylim([0.0, 0.25])  
-            # y_ticks = np.arange(0.0, 0.60, 0.05)  
-            # plt.ylim([0.0, 0.55])  
-            y_ticks_labels = [f"{tick:.2f}" for tick in y_ticks]  # 格式化标签为一位小数
-            plt.yticks(ticks=y_ticks, labels=y_ticks_labels, fontsize=6) 
-            plt.ylabel(f'{ylabel}', fontsize=7)
-            if not chance_flag:
-                plt.fill_between(range(modularity_seed_array.shape[1]), modularity_mean - modularity_ste, \
-                                modularity_mean + modularity_ste, color=color, alpha=0.2)
-            
-        plt.xlabel('Iterations', fontsize=6)
-        plt.legend(loc='lower right', bbox_to_anchor=(0.98, 0.05), frameon=False, fontsize=5)
-        
-    ax = plt.gca()
-    ax.spines['left'].set_position('zero')  # 将左轴脊移动到0点
-    ax.spines['bottom'].set_position('zero')  # 将底轴脊移动到0点
-    
-    ax.tick_params(axis='both', labelsize=5)
-    ax.tick_params(axis='both', width=0.25)
-    ax.spines['top'].set_linewidth(0.25)    
-    ax.spines['bottom'].set_linewidth(0.25) 
-    ax.spines['left'].set_linewidth(0.25)  
-    ax.spines['right'].set_linewidth(0.25) 
-    return modularity_all_array, perf_avg_all_array
-
     
 def plot_fig2a(model_size_list, color_dict):
     fig = plt.figure(figsize=(2.0, 2.0))
-    directory_name = "./runs/Fig2a_data"
+    directory_name = "./runs/Fig2a_data_RNN_relu"
     seed_list = [ i for i in range(100, 1100, 100)]
     task_name_list = ['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti',
                 'dm1', 'dm2', 'contextdm1', 'contextdm2', 'multidm',
                 'delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm',
                 'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
     
-    for flag in [False, True]:
+    for flag in [False]:
         plot_fig(directory_name, seed_list, task_name_list, model_size_list, \
             ylabel='Avg performance', plot_perf=True, \
                 color_dict=color_dict, chance_flag=flag)
 
     plt.title('Single Task Learning', fontsize=7)
     plt.tight_layout()
-    figures_path = './figures/Fig2'
-    if not os.path.exists(figures_path):
-        os.makedirs(figures_path)
-    fig.savefig(f'{figures_path}/Fig2a.svg', format='svg', dpi=300)
-    fig.savefig(f'{figures_path}/Fig2a.jpg', format='jpg', dpi=300)
+
+    fig.savefig(f'./figures/Fig2/Fig2a.svg', format='svg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2a.jpg', format='jpg', dpi=300)
 
 def plot_fig2b(model_size_list, color_dict):
     fig = plt.figure(figsize=(2.0, 2.0))
-    directory_name = "./runs/Fig2bcde_data"
-    seed_list = [ i for i in range(100, 1100, 100)]
+    directory_name = "./runs/Fig2bcde_data_relu"
+    seed_list = [ i for i in range(100, 2100, 100)]
     task_num_list = [20]
-    for flag in [False, True]:
+    for flag in [False]:
         plot_fig(directory_name, seed_list, task_num_list, model_size_list, \
             ylabel='Avg performance', color_dict=color_dict, chance_flag=flag)
 
     plt.title('Multi-task Learning', fontsize=7)
     plt.tight_layout()
-    figures_path = './figures/Fig2'
-    if not os.path.exists(figures_path):
-        os.makedirs(figures_path)
         
-    fig.savefig(f'{figures_path}/Fig2b.svg', format='svg', dpi=300)
-    fig.savefig(f'{figures_path}/Fig2b.jpg', format='jpg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2b.svg', format='svg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2b.jpg', format='jpg', dpi=300)
 
 def plot_fig2c(color_dict, N=15):
     fig = plt.figure(figsize=(2.0, 2.0))
     model_size_list = [N]
     task_num_list = [20]
-    directory_name = "./runs/Fig2bcde_data"
-    seed_list = [ i for i in range(100, 1100, 100)]
+    directory_name = "./runs/Fig2bcde_data_relu"
+    seed_list = [ i for i in range(100, 2100, 100)]
     multitask_modularity_array, multitask_perf_array = \
         plot_fig(directory_name, seed_list, task_num_list, model_size_list, ylabel='Modularity', \
              plot_perf=False, linelabel=f'# Multi-task', color_dict=color_dict)
@@ -202,7 +65,7 @@ def plot_fig2c(color_dict, N=15):
                 'delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm',
                 'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
 
-    directory_name = "./runs/Fig2a_data"
+    directory_name = "./runs/Fig2a_data_RNN_relu"
 
     singletask_modularity_array, singletask_perf_array = \
         plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel='Modularity', \
@@ -226,17 +89,13 @@ def plot_fig2c(color_dict, N=15):
     # plt.title(f'Single task vs Multi-task\n(# Hidden Neurons: {N})', fontsize=6)
     plt.title(f'Single task vs Multi-task', fontsize=6)
     plt.tight_layout()
-    
-    figures_path = './figures/Fig2'
-    if not os.path.exists(figures_path):
-        os.makedirs(figures_path)
         
-    fig.savefig(f'{figures_path}/Fig2c_{N}.jpg', format='jpg', dpi=300)
-    fig.savefig(f'{figures_path}/Fig2c_{N}.svg', format='svg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2c_{N}.jpg', format='jpg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2c_{N}.svg', format='svg', dpi=300)
     
 def plot_fig2de(model_size_list, task_num_list, color_dict):
-    directory_name = "./runs/Fig2bcde_data_RNN"
-    seed_list = [ i for i in range(100, 900, 100)]
+    directory_name = "./runs/Fig2bcde_data_relu"
+    seed_list = [ i for i in range(100, 2100, 100)]
 
     for model_size in model_size_list:
         fig, axs = plt.subplots(figsize=(2.0, 2.0))
@@ -272,21 +131,263 @@ def plot_fig2de(model_size_list, task_num_list, color_dict):
         axs.set_xlabel('Iterations', fontsize=6)    
         axs.set_ylabel('Modularity', fontsize=6)    
         axs.legend(loc='lower right', bbox_to_anchor=(0.98, 0.05), frameon=False, fontsize=6)
-        plt.tight_layout()
 
-        figures_path = './figures/Fig2'
-        if not os.path.exists(figures_path):
-            os.makedirs(figures_path)
+        plt.tight_layout()
+        fig.savefig(f'./figures/Fig2/Fig2de_{model_size}.jpg', format='jpg', dpi=300)
+        fig.savefig(f'./figures/Fig2/Fig2de_{model_size}.svg', format='svg', dpi=300)
+
+
+def plot_interaction_fig(model_size_list, task_num_list):
+    """
+    Plots the "Interaction Plot":
+    - X-axis: Number of Tasks
+    - Y-axis: Final Modularity
+    - Lines: One line per model_size
+    """
+    directory_name = "./runs/Fig2bcde_data_relu"
+    seed_list = [i for i in range(100, 2100, 100)]
+    
+    # Define a color dict for the model sizes
+    # You can change these colors
+    model_color_dict = {
+        64: '#003f5c',  # Dark Blue
+        32: '#4472c4', # Blue
+        16: '#5cb85c', # Green
+        8: '#ffa600'  # Orange/Yellow
+    }
+
+    fig, axs = plt.subplots(figsize=(2.5, 2.2)) # Single plot
+
+    # Outer loop is Model Size (each size is a line)
+    for model_size in model_size_list:
+        
+        mean_modularities = []
+        ste_modularities = []
+
+        # Inner loop is Task Number (each task num is a point on the X-axis)
+        for task_num in task_num_list:
+            # Load the data for this specific condition
+            modularity_array, _ = get_seed_avg(directory_name, model_size, task=task_num, seed_list=seed_list)
             
-        fig.savefig(f'{figures_path}/Fig2de_{model_size}.jpg', format='jpg', dpi=300)
-        fig.savefig(f'{figures_path}/Fig2de_{model_size}.svg', format='svg', dpi=300)
+            # Get the final modularity value for EACH seed
+            # Shape: (num_seeds,)
+            # mod_values_per_seed = modularity_array[:, -1]
+            mod_values_per_seed = modularity_array.mean(1)
+            # mod_values_per_seed = modularity_array.max(1)
+            
+            # Calculate the mean and STE of these final values
+            mean_final_mod = np.mean(mod_values_per_seed)
+            ste_final_mod = np.std(mod_values_per_seed) / np.sqrt(mod_values_per_seed.shape[0])
+            
+            mean_modularities.append(mean_final_mod)
+            ste_modularities.append(ste_final_mod)
+
+        # After iterating through all tasks, plot the line for this model_size
+        color = model_color_dict.get(model_size, 'black') # Get color or default to black
+        mean_modularities = np.array(mean_modularities)
+        ste_modularities = np.array(ste_modularities)
+        
+        # Use a label based on your paper's parameter scaling, as the reviewer suggested
+        recurrent_params = model_size * model_size
+        line_label = f'{model_size} Neurons ({recurrent_params} Params)'
+        
+        axs.plot(task_num_list, mean_modularities, label=line_label, color=color, linewidth=1.0, marker='o', markersize=3)
+        axs.fill_between(task_num_list, 
+                         mean_modularities - ste_modularities,
+                         mean_modularities + ste_modularities, 
+                         color=color, alpha=0.2)
+
+    # --- Styling the new plot ---
+    axs.set_xlabel('Number of Tasks', fontsize=6)
+    # axs.set_ylabel('Final Modularity', fontsize=6)
+    axs.set_ylabel('Mean Modularity', fontsize=6)
+    axs.set_title('Modularity vs. Task Load and Network Size', fontsize=7)
+    
+    # Set X-axis ticks to match your task numbers
+    axs.set_xticks(task_num_list, fontsize=6)
+    axs.set_xticklabels(task_num_list, fontsize=6)
+
+    # Apply your styling
+    axs.spines['top'].set_linewidth(0.25)
+    axs.spines['bottom'].set_linewidth(0.25)
+    axs.spines['left'].set_linewidth(0.25)
+    axs.spines['right'].set_linewidth(0.25)
+    axs.tick_params(axis='both', labelsize=5, width=0.25)
+
+    axs.legend(loc='upper left', frameon=False, fontsize=5)
+    plt.tight_layout()
+
+    fig.savefig(f'./figures/Fig2/Fig2_InteractionPlot.jpg', format='jpg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2_InteractionPlot.svg', format='svg', dpi=300)
+    print(f"Saved new interaction plot to ./figures/Fig2/Fig2_InteractionPlot.svg")
+
+
+# --- Main Plotting Function ---
+def plot_representational_strain_fig(model_size_list, task_num_list):
+    from functions.utils.eval_utils import ActivationHook
+    from functions.utils.math_utils import calculate_effective_dimensionality
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    directory_name = "./runs/Fig2bcde_data_relu"
+    seed_list = [i for i in range(100, 2100, 100)] # Assuming 20 seeds
+    
+
+    task_list_all = ['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti',
+              'dm1', 'dm2', 'contextdm1', 'contextdm2', 'multidm',
+              'delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm',
+              'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
+    
+    # Assuming the 'task' module is importable
+    import datasets.multitask as task
+    
+    results_filename = f'./runs/representational_strain.pkl'
+    if os.path.exists(results_filename):
+        print(f"Found serialized results file '{results_filename}'. Loading data...")
+            
+        with open(results_filename, 'rb') as f:
+            results = pickle.load(f)
+    else:
+        results = [] # Store all data for plotting
+    
+    if not results :
+        num_batches_per_task = 5 # How many batches to sample for ED
+        batch_size = 64
+        
+        for model_size in model_size_list:
+            for task_num in task_num_list:
+                
+                # --- Get Modularity Data ---
+                # Load modularity for all seeds in this condition at once
+                mod_array, _ = get_seed_avg(directory_name, model_size, task=task_num, seed_list=seed_list)
+                # Get the *final* modularity for each seed
+                final_mod_per_seed = mod_array[:, -1] # Shape: (len(seed_list),)
+
+                
+                for seed_idx, seed in enumerate(seed_list):
+                    print(f"Processing: Size={model_size}, Tasks={task_num}, Seed={seed}")
+                    
+                    # --- Load Model ---
+                    model_path = f'{directory_name}/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{46500}.pth'
+                    if not os.path.exists(model_path):
+                        print(f"Warning: Model not found, skipping: {model_path}")
+                        continue
+                    
+                    model = torch.load(model_path, map_location=device) 
+                    model.eval() # Set to evaluation mode
+                    hp = model.hp
+                    
+                    # THIS IS THE CRITICAL LINE YOU WROTE
+                    task_list_part = task_list_all[:task_num]
+            
+                    # --- Setup Hook ---
+                    hook_container = ActivationHook()
+                    # Register the hook on the readout layer
+                    handle = model.readout.register_forward_hook(hook_container)        
+                    
+                    # --- Run Trials ---
+                    with torch.no_grad(): 
+                        for task_name_now in task_list_part:                
+                            for _ in range(num_batches_per_task):
+                                trial = task.generate_trials(task_name_now, hp, 'random', batch_size=batch_size)
+                                input_tensor = torch.from_numpy(trial.x).to(device)
+
+                                # Running the forward pass now automatically saves the hidden states via the hook
+                                _ = model(input_tensor) 
+                                
+                    # --- Remove Hook ---
+                    handle.remove()
+
+                    # --- Process Collected Activations ---
+                    if not hook_container.activations:
+                        # print(f"Warning: No activations collected for {model_path}")
+                        continue
+                        
+                    # Concatenate all collected (T, B, H) tensors and reshape to (Total_Samples, H)
+                    all_activations_stacked = torch.cat(hook_container.activations, dim=0)
+                    all_activations_for_this_seed = all_activations_stacked.reshape(-1, model_size)
+                    
+                    # --- Calculate ED and Strain ---
+                    ed_capacity = calculate_effective_dimensionality(all_activations_for_this_seed)
+                    task_load = task_num 
+                    strain = task_load / ed_capacity.item()
+                    
+                    # --- Store Result ---
+                    results.append({
+                        'model_size': model_size,
+                        'task_num': task_num,
+                        'seed': seed,
+                        'strain': strain,
+                        'modularity': final_mod_per_seed[seed_idx],
+                        'ed_capacity': ed_capacity.item()
+                    })
+        
+        with open(results_filename, 'wb') as f:
+            pickle.dump(results, f)
+        print(f"Computation finished and results saved to '{results_filename}'.")
+        
+    df = pd.DataFrame(results).dropna(subset=['strain', 'modularity'])
+    
+    model_color_dict = { 64: '#003f5c', 32: '#4472c4', 16: '#5cb85c', 8: '#ffa600' }
+    
+    fig, ax = plt.subplots(figsize=(2.5, 2.2))
+    
+    sns.scatterplot(
+        data=df, x='strain', y='modularity', hue='model_size',
+        palette=model_color_dict, ax=ax, alpha=0.7, s=20
+    )
+    
+    sns.regplot(
+        data=df, x='strain', y='modularity',
+        scatter=False, ax=ax, color='black',
+        line_kws={'linestyle':'--', 'linewidth': 1.0}
+    )
+    
+    # --- NEWLY ADDED STATISTICAL ANNOTATION ---
+    # Calculate r and p
+    r, p = stats.pearsonr(df['strain'], df['modularity'])
+    
+    # Format the text using LaTeX for academic style
+    stat_text = (
+        f"$r = {r:.3f}$\n"
+        f"$p = {p:.2e}$"
+    )
+    
+    # Add text to the plot in the top-left corner
+    ax.text(0.05, 0.95, stat_text, 
+            transform=ax.transAxes, 
+            fontsize=7, 
+            verticalalignment='top',
+            # Add a white box for readability
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.5, edgecolor='none'))
+    # --- END OF NEW CODE ---
+            
+    ax.set_title('Modularity Increases with Representational Strain', fontsize=7)
+    ax.set_xlabel('Representational Strain\n(Task Num / Effective Dimensionality)', fontsize=6)
+    ax.set_ylabel('Final Modularity', fontsize=6)
+    
+    handles, labels = ax.get_legend_handles_labels()
+    new_labels = [f'{int(l)} Neurons ({int(l)*int(l)} Params)' for l in labels if l.isdigit()]
+    
+    ax.legend(handles, new_labels, title='Model Size', fontsize=5, title_fontsize=6, frameon=False, loc='upper right')
+    
+    ax.spines['top'].set_linewidth(0.25)
+    ax.spines['bottom'].set_linewidth(0.25)
+    ax.spines['left'].set_linewidth(0.25)
+    ax.spines['right'].set_linewidth(0.25)
+    ax.tick_params(axis='both', labelsize=6, width=0.25)
+    
+    plt.tight_layout()
+        
+    fig.savefig(f'./figures/Fig2/Fig2_StrainPlot.jpg', format='jpg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2_StrainPlot.svg', format='svg', dpi=300)
+    print("Saved new 'Strain Plot' to ./figures/Fig2/Fig2_StrainPlot.svg")
+    print(f"Correlation: r={r:.4f}, p={p:.2e}")
+    return df
+
 
 
 def plot_fig2f(model_size, seed, step, task_num_list):
     device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-    directory_name = "./runs/Fig2bcde_data_RNN"
-    seed_list = [ i for i in range(100, 900, 100)]
-    task_num_list = [3, 6, 11, 16, 20]
+    directory_name = "./runs/Fig2bcde_data_relu"
 
     for task_num in task_num_list:
         file_name = f'{directory_name}/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{step}.pth'
@@ -331,36 +432,39 @@ def plot_fig2f(model_size, seed, step, task_num_list):
         axs.spines['left'].set_linewidth(0.25)  
         axs.spines['right'].set_linewidth(0.25) 
         
-        figures_path = './figures/Fig2'
-        if not os.path.exists(figures_path):
-            os.makedirs(figures_path)
-        plt.savefig(f'{figures_path}/Fig2f_{task_num}.jpg', format='jpg', dpi=300)
-        plt.savefig(f'{figures_path}/Fig2f_{task_num}.svg', format='svg', dpi=300)
+        plt.savefig(f'./figures/Fig2/Fig2f_{task_num}.jpg', format='jpg', dpi=300)
+        plt.savefig(f'./figures/Fig2/Fig2f_{task_num}.svg', format='svg', dpi=300)
         print(f'step:{step}, task_num:{task_num}, modularity:{sc_qvalue}')
 
 
-model_size_list = [8, 16, 32, 64]
-task_num_list = [3, 6, 11, 16, 20]
-num_curves = len(model_size_list)
+if __name__ == '__main__':
 
-color_map = cm.get_cmap('Blues')
-# color_map = cm.get_cmap('Reds')
-color_indices = np.linspace(0.4, 0.9, len(model_size_list))  
-color_dict = {model_size: color_map(ci) for model_size, ci in zip(sorted(model_size_list), color_indices)}
+    figures_path = './figures/Fig2'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
 
-# plot_fig2a(model_size_list, color_dict)
-# plot_fig2b(model_size_list, color_dict)
-# for N in model_size_list:
-#     plot_fig2c(color_dict, N)
+    model_size_list = [8, 16, 32, 64]
+    task_num_list = [3, 6, 11, 16, 20]
+    num_curves = len(model_size_list)
 
-num_curves = len(task_num_list)
-color_map = cm.get_cmap('winter')
-color_indices = np.linspace(0.00, 1.0, len(task_num_list))  
-# color_map = cm.get_cmap('autumn')
-# color_indices = np.linspace(0.25, 0.75, len(num_list))  
-color_indices = color_indices[::-1]
-color_dict = {idx: color_map(ci) for idx, ci in zip(range(num_curves), color_indices)}
+    color_map = cm.get_cmap('Blues')
+    color_indices = np.linspace(0.4, 0.9, len(model_size_list))  
+    color_dict = {model_size: color_map(ci) for model_size, ci in zip(sorted(model_size_list), color_indices)}
 
-# plot_fig2de(model_size_list, task_num_list, color_dict)
+    plot_interaction_fig(model_size_list, task_num_list)
+    plot_representational_strain_fig(model_size_list, task_num_list)
 
-plot_fig2f(model_size=16, seed=300, step=10000, task_num_list=task_num_list)
+    plot_fig2a(model_size_list, color_dict)
+    plot_fig2b(model_size_list, color_dict)
+    for N in model_size_list:
+        plot_fig2c(color_dict, N)
+
+    num_curves = len(task_num_list)
+    color_map = cm.get_cmap('winter')
+    color_indices = np.linspace(0.00, 1.0, len(task_num_list))  
+    color_indices = color_indices[::-1]
+    color_dict = {idx: color_map(ci) for idx, ci in zip(range(num_curves), color_indices)}
+
+    plot_fig2de(model_size_list, task_num_list, color_dict)
+
+    plot_fig2f(model_size=8, seed=100, step=40000, task_num_list=task_num_list)

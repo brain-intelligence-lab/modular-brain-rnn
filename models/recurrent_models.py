@@ -1,6 +1,6 @@
 import torch
 from functions.generative_network_modelling.generative_network_modelling import Gen_one_connection
-from  functions.utils.eval_utils import generate_adj_matrix
+from  functions.utils.math_utils import generate_adj_matrix
 import scipy.io
 import numpy as np
 import torch.nn as nn

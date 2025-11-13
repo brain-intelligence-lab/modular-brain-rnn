@@ -1,6 +1,6 @@
 import argparse
 import torch
-from functions.utils.eval_utils import lock_random_seed
+from functions.utils.math_utils import lock_random_seed
 from tensorboardX import SummaryWriter
 from multitask_train import train, get_chance_level, module_lottery_ticket_hypo
 from datetime import datetime

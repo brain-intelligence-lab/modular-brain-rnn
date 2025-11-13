@@ -7,6 +7,8 @@ import matplotlib
 import matplotlib.cm as cm
 import scipy.stats as stats
 from statannot import add_stat_annotation 
+from functions.utils.plot_utils import list_files, plot_fig
+from functions.utils.math_utils import find_connected_components, get_induced_subgraphs
 import bct
 import torch
 import os
@@ -25,68 +27,6 @@ def start_parse():
     parser.add_argument('--posteriori_mask_path', default='./runs/Fig4_lottery_ticket_hypo_posteriori_modular', type=str)
     args = parser.parse_args()
     return args
-
-
-def list_files(directory, name):
-    path_list = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if '.pth' in file or '.txt' in file:
-                continue
-            if name == root.split('/')[-1]:
-                path_list.append(os.path.join(root, file))
-                
-    if len(path_list)!=1:
-        pdb.set_trace()
-
-    return path_list[0]
-
-
-def find_connected_components(adj_matrix):     
-    n = len(adj_matrix)  
-      
-    visited = {i: False for i in range(n)}  
-    components = []  
-
-    def dfs(node, component):  
-        # 标记当前节点为已访问  
-        visited[node] = True  
-        component.append(node)        
-        for neighbor in range(n):  
-            if adj_matrix[node][neighbor] and not visited[neighbor]:  
-                dfs(neighbor, component)  
-    
-    for i in range(n):  
-        if not visited[i]:  
-            component = []  
-            dfs(i, component)  
-            components.append(component)  
-
-    return components
-
-def get_induced_subgraphs(weight_matrix, components):  
-    N = len(weight_matrix)  
-    subgraphs = []  
-      
-    for component in components:  
-        n = len(component)
-        if n < 3:
-            continue
-
-        subgraph_matrix = np.zeros((n, n))
-
-        for i in range(len(component)):
-            for j in range(len(component)):
-                u = component[i]
-                v = component[j]
-                subgraph_matrix[i,j] = weight_matrix[u,v]
-          
-        subgraphs.append(subgraph_matrix)  
-      
-    return subgraphs  
-
-
-
 
 def plot_figure4b(args):
     model_size = 84
@@ -156,11 +96,7 @@ def plot_figure4b(args):
         x_ticks = [i for i in range(20, modularity_seed_array.shape[1]+1, 20)]
         # x_ticks = [0] + x_ticks
         x_tick_labels = [500 * i for i in x_ticks]
-
-        y_ticks, y_labels = plt.yticks()
-        new_y_ticks = [tick for tick in y_ticks if tick != 0.0 ]
-        
-        
+                
         axs.set_xticks(x_ticks)
         axs.set_xticklabels(x_tick_labels, rotation=45, fontsize=6)
         axs.set_xlim(0, 90)
@@ -294,13 +230,7 @@ def plot_figure4c(args):
 
 
 def plot_figure4e(args):
-    model_size_list = [8, 16, 32, 64]
-    
-    from plot_Fig2 import plot_fig
-
-    color_map = cm.get_cmap('Blues')
-    color_indices = np.linspace(0.4, 0.9, len(model_size_list))  
-    color_dict = {model_size: color_map(ci) for model_size, ci in zip(sorted(model_size_list), color_indices)}
+    model_size_list = [8, 16, 32]
 
     for model_size in model_size_list:
 
@@ -308,13 +238,17 @@ def plot_figure4e(args):
         task_num_list = [20]
 
         directory_name = args.random_mask_path
-        seed_list = [ i for i in range(100, 1700, 100)]
+        seed_list = [ i for i in range(100, 2100, 100)]
 
-        
+        color_map = cm.get_cmap('Blues')
+        color_indices = np.linspace(0.4, 0.9, len(model_size_list))  
+        color_dict = {model_size: color_map(ci) for model_size, ci in zip(sorted(model_size_list), color_indices)}
+
+
         random_modularity_array, random_perf_array = \
             plot_fig(directory_name, seed_list, task_num_list, [model_size], ylabel='Performance', \
-                plot_perf=True, linelabel=f'# random', color_dict=color_dict)
-
+                plot_perf=True, linelabel=f'# random', color_dict=color_dict, y_lim_perf=0.8)
+        
 
         color_map = cm.get_cmap('Reds')
         color_indices = np.linspace(0.4, 0.9, len(model_size_list)) 
@@ -323,7 +257,7 @@ def plot_figure4e(args):
         directory_name = args.posteriori_mask_path
         postriori_modularity_array, postriori_perf_array = \
             plot_fig(directory_name, seed_list, task_num_list, [model_size], ylabel='Avg performance', \
-            plot_perf=True, linelabel=f'# posteriori_modular', color_dict=color_dict)
+            plot_perf=True, linelabel=f'# posteriori_modular', color_dict=color_dict, y_lim_perf=0.8)
 
 
         color_map = cm.get_cmap('Greens')
@@ -333,7 +267,7 @@ def plot_figure4e(args):
         directory_name = args.prior_mask_path
         prior_modularity_array, prior_perf_array = \
             plot_fig(directory_name, seed_list, task_num_list, [model_size], ylabel='Avg performance', \
-        plot_perf=True, linelabel=f'# prior_modular', color_dict=color_dict)
+        plot_perf=True, linelabel=f'# prior_modular', color_dict=color_dict, y_lim_perf=0.8)
 
         iterations = np.arange(0, 40500, 500) 
 
@@ -365,5 +299,5 @@ if __name__ == '__main__':
     args = start_parse()
     plot_figure4b(args)
     # plot_figure4c(args)
-    # plot_figure4e(args)
+    plot_figure4e(args)
     
