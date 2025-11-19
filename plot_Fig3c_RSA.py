@@ -1,47 +1,34 @@
 import datasets.multitask as task
-from functions.utils.eval_utils import lock_random_seed
-from multitask_train import do_eval
-from collections import defaultdict
-from scipy.stats import spearmanr
+from functions.utils.math_utils import lock_random_seed
 import matplotlib.pyplot as plt
-from functions.generative_network_modelling.generative_network_modelling import Gen_one_connection
-import scipy
-from scipy.cluster.hierarchy import dendrogram, linkage, distance, fcluster
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import pdb
 from tqdm import tqdm
 import numpy as np
 import bct
 import torch
+import os
 
 import matplotlib
-from matplotlib import font_manager 
 
-fonts_path = '~/.conda/myfonts'
-font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
-
-for file in font_files:
-    font_manager.fontManager.addfont(file)
-
-matplotlib.rcParams['font.family'] = 'Myriad Pro'
-plt.rcParams["font.sans-serif"] = 'Myriad Pro'
 matplotlib.rcParams['pdf.fonttype'] = 42
 
 
-lock_random_seed(2024)
+figures_path = './figures/Fig3/Fig3c/'
+if not os.path.exists(figures_path):
+    os.makedirs(figures_path)
+    
+
+lock_random_seed(2025)
 task_num = 20
 seed=100
 device = torch.device('cuda:6')
-# step_list = [ step for step in range(500, 40500, 6500)]
 step_list = [ step for step in range(500, 40500, 3000)]
 
 row_matrices = 2
 col_matrices = int(len(step_list) / row_matrices)
 # num_matrices = len(step_list)
 
-# model_size_list = [128, 64, 30, 25, 20, 15, 10]
-model_size = 128
-# task_num_list = [3, 6, 11, 16, 20]
+model_size = 64
 task_num = 20
 
 fig, axs = plt.subplots(row_matrices, col_matrices, figsize=(1.35 * col_matrices, 1.35 * row_matrices)) 
@@ -50,27 +37,10 @@ q_value_list = []
 
 for i, step in enumerate(tqdm(step_list)):
 
-    model = torch.load(f'runs/Fig2bcde_data/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{step}.pth', device) 
-    model.hp['reg_term'] = False
-    recurrent_conn = model.recurrent_conn.weight.data.detach().cpu().numpy()
-    ci, sc_qvalue = bct.modularity_dir(np.abs(recurrent_conn))
+    model = torch.load(f'runs/Fig2b-h/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{step}.pth', device) 
+    hp = model.hp
+    N = model_size
     
-    ruleset = 'all'
-
-    hp = {'activation': 'softplus', 'use_snn':False}
-
-    default_hp = task.get_default_hp(ruleset)
-    if hp is not None:
-        default_hp.update(hp)
-
-    hp = default_hp
-    hp['seed'] = 2024
-    hp['rng'] = np.random.RandomState(hp['seed'])
-    hp['rule_trains'] = task.rules_dict[ruleset]
-    hp['rules'] = hp['rule_trains']
-
-    N = len(recurrent_conn)
-
     hidden_states_list = []
 
     def hook(module, input, output):
@@ -122,43 +92,17 @@ for i, step in enumerate(tqdm(step_list)):
         matrix_i_elements = matrix_i[tri_upper_indices] # 任务参与度矩阵的向量化  
         matrix_elements_list.append(matrix_i_elements) 
         
-        #TODO: 这里需要尝试几种度量
-        
-        # for neuron_j in range(neuron_i, model_size):
-        #     if neuron_i == neuron_j:
-        #         corr_matrix[neuron_i, neuron_j] = 1.0
-        #         continue
-
-        #     matrix_j = rs_list[neuron_j]
-        #     tri_upper_indices = np.triu_indices(n=matrix_j.shape[0], k=1)
-        #     matrix_j_elements = matrix_j[tri_upper_indices]
-            
-        #     correlation, p_value = spearmanr(matrix_i_elements, matrix_j_elements)
-            
-            
-        #     corr_matrix[neuron_i, neuron_j] = correlation
-        #     corr_matrix[neuron_j, neuron_i] = correlation
-        
     data_matrix = np.array(matrix_elements_list)
     corr_matrix = np.corrcoef(data_matrix) # 不同神经元基于任务参与度的相似性
         
     handle.remove()
 
-    # dissimilarity = 1 - corr_matrix
-    # ci, q_value = bct.modularity_dir(dissimilarity)
     ci, q_value = bct.community_louvain(W=corr_matrix, B='negative_asym', seed=2024)
 
     print(q_value)
 
     q_value_list.append(q_value)
 
-    
-    # distance_matrix = linkage(distance.pdist(dissimilarity), method='ward')
-    
-    # ci = fcluster(distance_matrix, 0.5, criterion='distance')
-    
-    # corr_matrix[corr_matrix < 0] =0
-    # ci, q_value = bct.modularity_dir(dissimilarity)
     
     sorted_indices = np.argsort(ci)
     sorted_matrix = corr_matrix[sorted_indices][:, sorted_indices]
@@ -210,8 +154,8 @@ cbar.set_label('Similarity', labelpad=2, fontsize=6)
 cbar.ax.yaxis.set_label_position('left')
 
 # plt.colorbar(im, ax=plt.gcf().get_axes(), orientation='vertical', label='Similarity')
-plt.savefig(f'./figures/Fig3/Fig3b/Neurons_cluster{model_size}_{task_num}.svg', format='svg', dpi=300)
-plt.savefig(f'./figures/Fig3/Fig3b/Neurons_cluster{model_size}_{task_num}.jpg', format='jpg', dpi=300)
+plt.savefig(f'./figures/Fig3/Fig3c/Neurons_cluster{model_size}_{task_num}.svg', format='svg', dpi=300)
+plt.savefig(f'./figures/Fig3/Fig3c/Neurons_cluster{model_size}_{task_num}.jpg', format='jpg', dpi=300)
 
 
 # 检查 q_value_list 和 step_list 是否长度一致
@@ -236,7 +180,4 @@ plt.legend(fontsize=5)
 plt.xticks(fontsize=6)
 plt.yticks(fontsize=6)
 
-# 保存图形
-# plt.savefig('./figures/Fig3/Fig3b/Q_value_change.svg', format='svg', dpi=300)
-# plt.savefig('./figures/Fig3/Fig3b/Q_value_change.jpg', format='jpg', dpi=300)
-plt.savefig('./figures/Fig3/Fig3b/suplementary_fig3c.pdf', format='pdf', dpi=300)
+plt.savefig('./figures/Fig3/Fig3c/suplementary_fig3c.pdf', format='pdf', dpi=300)

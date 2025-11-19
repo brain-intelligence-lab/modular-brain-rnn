@@ -20,18 +20,18 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 
 def start_parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--incremental_path', default='./runs/Fig4_incremental_-3.0', type=str)
-    parser.add_argument('--normal_path', default='./runs/Fig4_all-in-one_-3.0', type=str)
-    parser.add_argument('--random_mask_path', default='./runs/Fig4_lottery_ticket_hypo_random', type=str)
-    parser.add_argument('--prior_mask_path', default='./runs/Fig4_lottery_ticket_hypo_prior_modular', type=str)
-    parser.add_argument('--posteriori_mask_path', default='./runs/Fig4_lottery_ticket_hypo_posteriori_modular', type=str)
+    parser.add_argument('--incremental_path', default='./runs/Fig4bc/incremental', type=str)
+    parser.add_argument('--normal_path', default='./runs/Fig4bc/all-in-one', type=str)
+    parser.add_argument('--random_mask_path', default='./runs/Fig4efg/lottery_ticket_hypo_random', type=str)
+    parser.add_argument('--prior_mask_path', default='./runs/Fig4efg/lottery_ticket_hypo_prior_modular', type=str)
+    parser.add_argument('--posteriori_mask_path', default='./runs/Fig4efg/lottery_ticket_hypo_posteriori_modular', type=str)
     args = parser.parse_args()
     return args
 
 def plot_figure4b(args):
     model_size = 84
 
-    seed_list = [ i for i in range(100, 900, 100)]
+    seed_list = [ i for i in range(100, 2100, 100)]
 
     task_list = ['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti', 
                  'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo',
@@ -99,9 +99,10 @@ def plot_figure4b(args):
                 
         axs.set_xticks(x_ticks)
         axs.set_xticklabels(x_tick_labels, rotation=45, fontsize=6)
-        axs.set_xlim(0, 90)
+        # axs.set_xlim(0, 90)
         axs.tick_params(axis='both', labelsize=5)
         axs.tick_params(axis='both', width=0.25)
+        axs.axvline(x=80, color='green', linestyle='--', linewidth=0.75)
         
         color_list = ['#2171A8', '#DA762A']
         axs.set_ylim(0, 0.5)
@@ -124,7 +125,7 @@ def plot_figure4b(args):
     
     axs.set_xlabel('Iterations', fontsize=6, labelpad=2)
 
-    plt.legend(loc='lower right', bbox_to_anchor=(1.02, 0.02), frameon=False, ncol=1, fontsize=5, title_fontsize=6)
+    plt.legend(loc='lower right', bbox_to_anchor=(1.00, 0.02), frameon=False, ncol=1, fontsize=5, title_fontsize=6)
     axs.set_ylabel('Modularity', fontsize=6, labelpad=2)
     
     plt.tight_layout()
@@ -298,6 +299,6 @@ if __name__ == '__main__':
 
     args = start_parse()
     plot_figure4b(args)
-    # plot_figure4c(args)
+    plot_figure4c(args)
     plot_figure4e(args)
     

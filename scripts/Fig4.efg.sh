@@ -10,32 +10,34 @@ cleanup() {
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
 
+python main.py --gen_dataset_files --max_trials 3000000
+
 n_rnns=(8 16 32 64)
 task_num=20
 gpus=(0 1 2 3 4 5 6 7)
 num_of_gpus=${#gpus[@]}
 
 mask_types=("prior_modular" "posteriori_modular" "random")
-seeds=($(seq 100 100 1600))  
+seeds=($(seq 100 100 2000))  
 
 index=0
-for n_rnn in "${n_rnns[@]}"; do
-    for seed in "${seeds[@]}"; do
+for seed in "${seeds[@]}"; do 
+    for n_rnn in "${n_rnns[@]}"; do
         for mask_type in "${mask_types[@]}"; do
             gpu=${gpus[$index]}
             # 构造 log_dir 路径
-            log_dir="./runs/Fig4_lottery_ticket_hypo_${mask_type}/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
-            load_model_path="./runs/Fig2bcde_data_one_init/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
+            log_dir="./runs/Fig4_efg/lottery_ticket_hypo_${mask_type}/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
+            load_model_path="./runs/Fig2b-h/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
             echo "Launching task_num $task_num on GPU $gpu with seed $seed"
             # 确保日志目录存在
             mkdir -p $log_dir
             # 启动训练进程
             python main.py \
                 --n_rnn $n_rnn \
-                --rec_scale_factor 0.01 \
+                --rec_scale_factor 0.1 \
                 --task_num $task_num \
                 --gpu $gpu \
-                --init_mode one_init \
+                --init_mode randortho \
                 --seed $seed \
                 --mod_lottery_hypo \
                 --log_dir $log_dir \
@@ -44,7 +46,7 @@ for n_rnn in "${n_rnns[@]}"; do
                 --save_model \
                 --load_model_path $load_model_path \
                 --read_from_file \
-                --non_linearity tanh \
+                --non_linearity relu \
                 --max_trials 2560000 &  
             let index+=1
             let index%=num_of_gpus
@@ -52,10 +54,11 @@ for n_rnn in "${n_rnns[@]}"; do
         done
     done
 
-    echo "All jobs submited!"
-    wait  # 等待所有后台任务完成
-    echo "All jobs for n_rnn=${n_rnn} for completed at $(date)"
 
+    if (( seed % 400 == 0 )); then
+        echo "All jobs for seed<=$seed started at $(date)"
+        wait  # 等待所有后台任务完成
+    fi
 
 done
 

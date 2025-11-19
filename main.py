@@ -48,6 +48,7 @@ def start_parse():
     parser.add_argument('--reg_term', action='store_true')
     parser.add_argument('--read_from_file', action='store_true')
     parser.add_argument('--get_chance_level', action='store_true')
+    parser.add_argument('--gen_dataset_files', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -114,7 +115,7 @@ def _run_training_loop(args, hp, model, writer: SummaryWriter):
     NUM_OF_BATCHES = int(args.max_trials // hp['batch_size_train'])
     if args.read_from_file:
         train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
-            batch_size, data_dir = '/data_nv/dataset/multitask/train')
+            batch_size, data_dir = './datasets/multitask/train')
     else:
         train_dataset = task.Multitask_Batches_Realtime_Gen(hp, NUM_OF_BATCHES, batch_size)
     
@@ -123,7 +124,7 @@ def _run_training_loop(args, hp, model, writer: SummaryWriter):
     
     if args.eval_perf and args.read_from_file:
         test_set = task.Get_Testset(hp, \
-            data_dir='/data_nv/dataset/multitask/test', n_rep=32, batch_size=16)
+            data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
         
         big_batch_test_data = \
             task.preprocess_dataset_for_gpu_global(test_set, hp['rules'], device)
@@ -161,8 +162,7 @@ def _run_training_loop(args, hp, model, writer: SummaryWriter):
             step += 1
             if conn_mode == 'grow' and step % args.max_steps_per_stage == 0:
                 model.grow_connections(args.add_conn_per_stage)
-                if args.optimizer == 'adam':
-                    optimizer = torch.optim.Adam(model.parameters(), lr=hp['learning_rate'])
+                optimizer = torch.optim.Adam(model.parameters(), lr=hp['learning_rate'])
 
             if step % args.display_step == 0:
                 num_trials = step * hp['batch_size_train']
@@ -316,8 +316,10 @@ def module_lottery_ticket_hypo(args, writer):
                 lottery_mask[i, j] = 1.0
 
     if args.mask_type == 'posteriori_modular':
+
         init_model.set_mask(lottery_mask)
         assert(lottery_mask.sum() < n_rnn * n_rnn)
+
     elif args.mask_type == 'prior_modular':
         
         num_ones = int(np.sum(lottery_mask))
@@ -347,6 +349,18 @@ if __name__ == '__main__':
     args = start_parse()
     lock_random_seed(seed=args.seed)
     assert args.conn_mode =='full' or args.conn_num != -1
+    
+    if args.gen_dataset_files:
+        hp = task.get_default_hp(args.rule_set)
+        batch_size = hp['batch_size_train']
+        NUM_OF_BATCHES = int(args.max_trials // batch_size)
+        train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
+            batch_size, data_dir = './datasets/multitask/train')
+
+        test_set = task.Get_Testset(hp, \
+            data_dir='./datasets/multitask/test', n_rep=32, batch_size=16)
+        exit(0)
+
     
     writer = SummaryWriter(log_dir=args.log_dir)
     log_dir = writer.logdir

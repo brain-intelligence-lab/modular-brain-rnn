@@ -32,8 +32,8 @@ def calculate_modularity_in_r(weight_matrix: np.ndarray, r_script_path:str, verb
         mod2_result = dirt_lpa_func(r_matrix)
 
 
-    modularity1 = mod1_result['modularity'][0]
-    modularity2 = mod2_result['modularity'][0]
+    modularity1 = mod1_result[0][0]
+    modularity2 = mod2_result[0][0]
 
     if verbose:
         print(f" 模块度结果: LPA_wb_plus = {modularity1}, DIRT_LPA_wb_plus = {modularity2}")

@@ -1,36 +1,14 @@
 import numpy as np 
 import matplotlib.pyplot as plt
+from functions.utils.plot_utils import list_files, plot_fig
+
 import pdb
 import tensorflow as tf
 import argparse
 import matplotlib
-from matplotlib import font_manager 
-
 import os
 
-fonts_path = '~/.conda/myfonts'
-font_files = font_manager.findSystemFonts(fontpaths=fonts_path)
-
-for file in font_files:
-    font_manager.fontManager.addfont(file)
-    
-matplotlib.rcParams['font.family'] = 'Myriad Pro'
-plt.rcParams["font.sans-serif"] = 'Myriad Pro'
 matplotlib.rcParams['pdf.fonttype'] = 42
-
-def list_files(directory, name):
-    path_list = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if '.pth' in file or '.txt' in file:
-                continue
-            if name == root.split('/')[-1]:
-                path_list.append(os.path.join(root, file))
-                
-    if len(path_list)!=1:
-        pdb.set_trace()
-
-    return path_list[0]
 
 def start_parse():
     parser = argparse.ArgumentParser()
@@ -40,18 +18,23 @@ def start_parse():
     return args
 
 if __name__ == '__main__':
+
+    figures_path = './figures/Fig3/Fig3a/'
+    if not os.path.exists(figures_path):
+        os.makedirs(figures_path)
+
     args = start_parse()
     
-    seed_list = [ i for i in range(100, 1100, 100)]
+    seed_list = [ i for i in range(100, 2100, 100)]
 
     if args.case == 1:
         directory_name = "./runs/Fig3a_go"
         task_name_list = ['fdgo', 'fdanti', 'fdgo_fdanti']
         model_size_list = [4, 10]
     elif args.case == 2:
-        directory_name = "./runs/Fig3a_contextdm"
-        task_name_list = ['contextdm1', 'contextdm2', 'contextdm1_contextdm2']
-        model_size_list = [26, 44]
+        directory_name = "./runs/Fig3a_contextdelaydm_easy_task"
+        task_name_list = ['contextdelaydm1', 'contextdelaydm2', 'contextdelaydm1_contextdelaydm2']
+        model_size_list = [17, 23]
     elif args.case == 3:
         directory_name = "./runs/Fig3a_go"
         task_name_list = ['fdgo', 'delaygo', 'fdgo_delaygo']
@@ -130,7 +113,7 @@ if __name__ == '__main__':
             else:
                 task_name = task_name_abbreviation[task_name]
 
-            axs.plot(perf_avg_mean, label=task_name, linewidth=0.25)
+            axs.plot(perf_avg_mean, label=task_name, linewidth=0.5)
             axs.fill_between(range(perf_avg_seed_array.shape[1]), perf_avg_mean - perf_avg_ste, perf_avg_mean + perf_avg_ste, alpha=0.2)
         
 
@@ -141,7 +124,7 @@ if __name__ == '__main__':
         axs.spines['left'].set_linewidth(0.25)  
         axs.spines['right'].set_linewidth(0.25)  
         # axs.tick_params(axis='both', 
-        axs.tick_params(axis='both', width=0.25, length=1.0, labelsize=5, pad=1)
+        axs.tick_params(axis='both', width=0.25, length=1.0, labelsize=4, pad=1)
         
         axs.set_title(f'# Hidden Neurons: {model_size}', fontsize=5, pad=2)
         axs.set_xlabel('Iterations', fontsize=5, labelpad=1)

@@ -1742,8 +1742,7 @@ class Multitask_Batched(torch.utils.data.Dataset):
             return False
         
         existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.pt')]
-        # return len(existing_files) >= self.num_batches
-        return len(existing_files) >= 40000
+        return len(existing_files) >= self.num_batches
 
     def _collect_batch_paths(self):
         """收集所有 batch 文件的路径，并按编号排序"""
@@ -1767,11 +1766,11 @@ class Multitask_Batched(torch.utils.data.Dataset):
         # 1. 定义周期的长度
         cycle_length = int(1.0/ np.min(self.task_prob))
         
-        assert self.num_batches % cycle_length == 0, \
-            f"Total number of batches ({self.num_batches}) \
-                must be a multiple of cycle_length ({cycle_length})."
+        # assert self.num_batches % cycle_length == 0, \
+        #     f"Total number of batches ({self.num_batches}) \
+        #         must be a multiple of cycle_length ({cycle_length})."
 
-        num_cycles = self.num_batches // cycle_length
+        num_cycles = (self.num_batches + cycle_length - 1) // cycle_length
 
         # 2. 根据概率计算每个周期内，每个任务应该生成的批次数
         # 我们假设概率的分母就是 cycle_length (28)

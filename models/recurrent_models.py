@@ -8,6 +8,19 @@ import torch.nn as nn
 class base_recurrent_model(nn.Module):
     def __init__(self):
         super(base_recurrent_model, self).__init__()
+    
+    def set_activation(self, hp):
+        if hp['activation'] == 'softplus':
+            self.rnn_activation = nn.Softplus()
+        elif hp['activation'] == 'relu':
+            self.rnn_activation = nn.ReLU() 
+        elif hp['activation'] == 'tanh':
+            self.rnn_activation = nn.Tanh()
+        elif hp['activation'] == 'leakyrelu':
+            self.rnn_activation = nn.LeakyReLU()
+        else:
+            raise NotImplementedError
+
 
     def init_recurrent_layer(self, hp):
         hidden_size = hp['n_rnn']
@@ -55,15 +68,7 @@ class RNN(base_recurrent_model):
         self.readout = nn.Linear(hidden_size, n_output)
         
         self.comm_loss = 0.0         
-    
-        if hp['activation'] == 'softplus':
-            self.rnn_activation = nn.Softplus()
-        elif hp['activation'] == 'relu':
-            self.rnn_activation = nn.ReLU() 
-        elif hp['activation'] == 'tanh':
-            self.rnn_activation = nn.Tanh()
-        elif hp['activation'] == 'leakyrelu':
-            self.rnn_activation = nn.LeakyReLU()
+        self.set_activation(hp)
             
         self.device = device
 
@@ -181,14 +186,7 @@ class GRU(base_recurrent_model):
         self.rec_scale_factor = rec_scale_factor
         self.W_hh.weight.data *= self.rec_scale_factor
         
-        if hp['activation'] == 'softplus':
-            self.activation = nn.Softplus()
-        elif hp['activation'] == 'relu':
-            self.activation = nn.ReLU() 
-        elif hp['activation'] == 'tanh':
-            self.activation = nn.Tanh()
-        elif hp['activation'] == 'leakyrelu':
-            self.activation = nn.LeakyReLU()
+        self.set_activation(hp)
             
         self.device = device
     
@@ -253,14 +251,7 @@ class LSTM(base_recurrent_model):
         self.rec_scale_factor = rec_scale_factor
         self.W_hc.weight.data *= self.rec_scale_factor
         
-        if hp['activation'] == 'softplus':
-            self.activation = nn.Softplus()
-        elif hp['activation'] == 'relu':
-            self.activation = nn.ReLU() 
-        elif hp['activation'] == 'tanh':
-            self.activation = nn.Tanh()
-        elif hp['activation'] == 'leakyrelu':
-            self.activation = nn.LeakyReLU()
+        self.set_activation(hp)
             
         self.device = device
     

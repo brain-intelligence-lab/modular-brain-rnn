@@ -10,19 +10,20 @@ cleanup() {
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
 
-n_rnns=(8 64)
+python main.py --gen_dataset_files --max_trials 3000000
+
+n_rnns=(8 16 32)
 task_num=(20)
-gpus=(0 1 2 3)
+gpus=(0 1 2 3 4 5 6 7)
 num_of_gpus=${#gpus[@]}
-seeds=($(seq 65 1 256))  
+seeds=($(seq 1 1 256))  
 act_fun='tanh'
 
-index=0
 for n_rnn in "${n_rnns[@]}"; do
-
+    index=0
     for seed in "${seeds[@]}"; do
         gpu=${gpus[$index]}
-        log_dir="./runs/Fig3c_${act_fun}_${n_rnn}_new/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
+        log_dir="./runs/Fig3d_${n_rnn}/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
         echo "Launching task_num $task_num on GPU $gpu with seed $seed"
         # 确保日志目录存在
         mkdir -p $log_dir
@@ -44,11 +45,10 @@ for n_rnn in "${n_rnns[@]}"; do
         let index+=1
         let index%=num_of_gpus
 
-        if (( seed % 16 == 0 )); then
-            wait  # 等待所有后台任务完成
+        if (( seed % 32 == 0 )); then
             echo "All jobs for n_rnn=$n_rnn with seed<=$seed started at $(date)"
+            wait  # 等待所有后台任务完成
         fi
 
     done
-    
 done

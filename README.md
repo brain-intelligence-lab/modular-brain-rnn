@@ -6,8 +6,8 @@
 - [Repo Contents](#repo-contents)
 - [System Requirements](#system-requirements)
 - [Installation Guide](#installation-guide)
-- [Demo](#demo)
-- [Results](#results)
+- [Training](#Training)
+- [Plot Results](#plot-results)
 - [License](./LICENSE)
 - [Issues](https://github.com/brain-intelligence-lab/modular-brain-rnn/issues)
 - [Citation](#citation)
@@ -23,8 +23,8 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 
 - [Data](./datasets/brain_hcp_data/84/): Data from The Human Connectome Project.
 - [Python](./): Main Python source code (see `main.py`, `models/`, `utils/`, etc.).
-- [Shell scripts](./): Shell scripts are used to automate and manage multiple \
- parallel Python tasks (see `Fig2.a.sh`, `Fig2.bcde.sh`, `Fig3.a.sh`, etc.).
+- [Shell scripts](./scripts): Shell scripts are used to automate and manage multiple \
+ parallel Python tasks (see `Fig2.a.sh`, `Fig2.b-h.sh`, `Fig3.a.sh`, etc.).
 
 # System Requirements
 
@@ -57,17 +57,31 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
 3. Install dependencies:
     ```bash
     pip install -r requirements.txt
+    ```
 
-    # (optional) Only needed by some supplementary experiments
-    # (For CNN, GNN community detection)
-    conda install -c conda-forge r-base
+4. Optional packages
+
+    These packages are only necessary for some analyses and supplementary experiments mentioned in the paper.
+    
+    For Linear Mixed-Effects Analysis (Fig.2h) & Bipartite Network Community Detection:
+
+    ```bash
+
     conda install rpy2
+    R
+    # Inside the R environment, install required packages:
+    install.packages("lme4")
+    install.packages("RLRsim")
+    # Type 'quit()' to exit R
 
-    # (optional) Install torch_geometric dependencies (For GNN training)
-    # Install pyg_lib torch_cluster torch_scatter torch_sparse torch_spline_conv 
+   ```
+   For GNN Training, :
+   ```bash
+    # We need to install torch_geometric 
+    # We first install pyg_lib torch_cluster torch_scatter torch_sparse torch_spline_conv 
     # from https://data.pyg.org/whl/torch-1.13.0%2Bcu117.html
-    # Take pyg_lib for example:
 
+    # Take pyg_lib for example:
     wget https://data.pyg.org/whl/torch-1.13.0%2Bcu117/pyg_lib-0.4.0%2Bpt113cu117-cp39-cp39-linux_x86_64.whl
     pip install pyg_lib-0.4.0+pt113cu117-cp39-cp39-linux_x86_64.whl 
 
@@ -76,31 +90,39 @@ In this study, we demonstrate that multitask and incremental learning enhance mo
     ```
 
 
-# Demo
+# Training
 
-To run the main.py manually,
-```bash
-conda activate mod_rnn
-mkdir -p ./runs/Fig2bcde_data/n_rnn_16_task_20_seed_100
+To reproduce the results, the shell scripts are here to automate and manage multiple parallel Python tasks.
 
-python main.py --n_rnn $16 --rec_scale_factor 0.1 \
-    --task_num 20 --gpu 0 --seed 100 --non_linearity relu \
-    --save_model --max_trials 3000000 \
-    --log_dir ./runs/Fig2bcde_data/n_rnn_16_task_20_seed_100 
-```
-or use the shell script to automate and manage multiple parallel Python tasks
+To start single task learning, use Fig2.a.sh to train all 20 tasks independently:
 
 ```bash
-./Fig2.a.sh
+./scripts/Fig2.a.sh
 ```
+To start multi-task learning, use Fig2.b-h.sh to train multiple tasks together:
+
+```bash
+./scripts/Fig2.b-h.sh
+```
+For other experiments in the paper, just use the corresponding scripts.
+
+
+# Plot Results
+Once training is complete, you can generate the figures used in the paper by running the corresponding Python plot scripts:
+
+```bash
+python plot_Fig2.py
+```
+
+Results traning log and figures can be found in the `./runs` and `./figures` respectively.
+
+
 # Overall Workflow
 ![](./figures/workflow.svg)
 
 
 
-# Results
 
-Results and figures can be found in the `./runs` and `./figures` directory.  
 
 # Citation
 

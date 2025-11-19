@@ -10,10 +10,12 @@ cleanup() {
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
 
+python main.py --gen_dataset_files --max_trials 3000000
+
 
 n_rnns=(84)
 task_num=20
-gpus=(0 1 2 3)
+gpus=(0 1 2 3 4 5 6 7)
 num_of_gpus=${#gpus[@]}
 seeds=($(seq 1 1 48))
 
@@ -36,6 +38,8 @@ for n_rnn in "${n_rnns[@]}"; do
             --log_dir $log_dir \
             --init_mode randortho \
             --non_linearity relu \
+            --read_from_file \
+            --eval_perf \
             --save_model \
             --reg_factor 0.000001 \
             --reg_term \

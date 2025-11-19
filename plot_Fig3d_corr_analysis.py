@@ -5,7 +5,6 @@ import pdb
 import tensorflow as tf
 import seaborn as sns
 import matplotlib
-from matplotlib import font_manager 
 import os
 
 matplotlib.rcParams['pdf.fonttype'] = 42
@@ -26,8 +25,8 @@ def list_files(directory):
     return path_list
 
 
-def plot_scatter(x_array, y_array):
-    plt.figure(figsize=(2.0, 2.0))
+def plot_scatter(x_array, y_array, xlabel='Modularity', ylabel='Performance', file_name='performance_vs_modularity'):
+    plt.figure(figsize=(1.8, 1.8))
 
     r, p = stats.pearsonr(x_array, y_array)
     print(f'step:{step}, r:{r:.4f}, p:{p:.6f}, len:{len(y_array)}')
@@ -43,8 +42,8 @@ def plot_scatter(x_array, y_array):
 
     # 添加标题和标签
     # plt.title('Modularity vs Performance: Correlation Analysis')
-    plt.xlabel('Modularity', fontsize=6)
-    plt.ylabel('-Loss', fontsize=6)
+    plt.xlabel(f'{xlabel}', fontsize=6)
+    plt.ylabel(f'{ylabel}', fontsize=6)
 
     axs = plt.gca()
 
@@ -57,29 +56,26 @@ def plot_scatter(x_array, y_array):
     # 添加 Pearson r 和 p 值信息
     plt.text(
         0.70, 0.95,  # x, y 位置（相对坐标）
-        f'r = {r:.5f}\np = {p:.2e}',  # 显示的文本
+        f'r = {r:.4f}\np = {p:.2e}',  # 显示的文本
         transform=plt.gca().transAxes,  # 使用相对坐标
         verticalalignment='top',  # 文本顶部对齐
         fontsize=5,  # 这里指定文本的字体大小
         bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5', linewidth=0.25)  # 边框设置
     )
-    # 调整布局
 
+    axs.set_box_aspect(1)  # 设置绘图框的高宽比为1
     plt.tight_layout()
 
-    plt.savefig("./figures/Fig3/Fig3c/Correlation_Scatter_Plot.svg", format='svg', dpi=300)
-    plt.savefig("./figures/Fig3/Fig3c/Correlation_Scatter_Plot.jpg", format='jpg', dpi=300)
-
-    return 1
-
+    plt.savefig(f"./figures/Fig3/Fig3d/{file_name}.svg", format='svg', dpi=300)
+    plt.savefig(f"./figures/Fig3/Fig3d/{file_name}.jpg", format='jpg', dpi=300)
+    plt.close()
 
 task_num = 20
 
-model_size_list = [16, 8]
+model_size_list = [8]
 for m_idx, n_rnn in enumerate(model_size_list):
-    exp_name = f'Fig3c_seed_search_0.1_tanh_{n_rnn}'
-    paths = list_files(f"./runs/{exp_name}")
-    # paths = paths[:96]
+    runs_name = f'Fig3d_{n_rnn}'
+    paths = list_files(f"./runs/{runs_name}")
     print(len(paths))
     
     r_list = []
@@ -139,58 +135,56 @@ for m_idx, n_rnn in enumerate(model_size_list):
 
     sorted_mod = np.sort(modularity_array, axis=1)
 
-    max_modularity = np.mean(sorted_mod[:, -50:], axis=1)
-    # final_perf = []
+    max_modularity = np.mean(sorted_mod[:, -1:], axis=1)
     learning_speed = []
 
-    cumulative_loss = np.cumsum(loss_array, axis=1)
+    cumulative_acc = np.cumsum(perf_avg_array, axis=1)
     lens = np.arange(1, loss_array.shape[1] + 1)    
-    average_loss_up_to_now = cumulative_loss / lens  
-
+    average_acc_up_to_now = cumulative_acc / lens
 
     for j in range(perf_avg_array.shape[0]):
         visited = set()
-        score_list = []
         if loss_array[j].max() < 0.05:
             pdb.set_trace()
             print(f"j:  {j}")
             continue
         
-        # max_modularity.append(np.mean(sorted_mod[j, -100:])
         tmp = []
 
         for idx, step in enumerate(step_range):
-            for milestone in [6.0]:
-                if average_loss_up_to_now[j, idx] <= milestone  and milestone not in visited:
-                    # tmp.append(step * average_loss_up_to_now[j, idx])
+            for milestone in [0.30]:
+                if average_acc_up_to_now[j, idx] >= milestone  and milestone not in visited:
                     learning_speed.append(step)
                     visited.add(milestone)
-                    # score_list.append(average_loss_up_to_now[j, idx])
 
-        # learning_speed.append(np.sum(tmp))
-        # learning_speed[-1] *= np.sum(score_list)
 
-    # max_modularity = np.array(max_modularity)
     learning_speed = np.array(learning_speed)
 
     r, p = stats.pearsonr(max_modularity, learning_speed)
     print(f"r:{r:.4f}, p:{p:.4f}, len:{max_modularity.shape[0]}")
-    pre_loss_sum = 0.0
+    plot_scatter(max_modularity, learning_speed, xlabel='Max Modularity', \
+                 ylabel='Iterations to 30% Acc', file_name=f'learning_speed_vs_modularity_{n_rnn}')
 
+    final_perf = perf_avg_array[:, -1]
+    r, p = stats.pearsonr(max_modularity, final_perf)
+    print(f"Final Perf -> r:{r:.4f}, p:{p:.4f}, len:{max_modularity.shape[0]}")
+    plot_scatter(max_modularity, final_perf, xlabel='Max Modularity', \
+                 ylabel='Final Performance', file_name=f'final_performance_vs_modularity_{n_rnn}')
+
+    pre_acc_sum = 0.0
     max_r = -1.0
     max_r_arrays=None
 
+    cnt = 0
     for idx, step in enumerate(step_range):
         if step % (500) !=0:
+            cnt +=1
             continue
-    
-        # r, p = stats.pearsonr(modularity_array[:, idx], perf_avg_array[:, idx])
-        loss_delta = cumulative_loss[:, idx] - pre_loss_sum
-        pre_loss_sum = cumulative_loss[:, idx]
-        
-        r, p = stats.pearsonr(modularity_array[:, idx], -loss_delta)
-        # r, p = stats.pearsonr(modularity_array[:, idx], cumulative_loss[:, idx])
-        # r, p = stats.pearsonr(modularity_array[:, idx], -loss_array[:, idx])
+
+        acc_delta = (cumulative_acc[:, idx] - pre_acc_sum) / cnt
+        pre_acc_sum = cumulative_acc[:, idx]
+        r, p = stats.pearsonr(modularity_array[:, idx], acc_delta)
+        cnt = 0
 
         perf = perf_avg_array[:, idx].mean()
         mod = modularity_array[:, idx].mean()
@@ -202,11 +196,10 @@ for m_idx, n_rnn in enumerate(model_size_list):
 
         if r > max_r:
             max_r = r
-            max_r_arrays = (modularity_array[:, idx], -loss_delta)
+            max_r_arrays = (modularity_array[:, idx], acc_delta)
     
         r_list.append(r)
         p_list.append(p)
-        avg_loss_list.append(np.mean(average_loss_up_to_now[:, idx]))
         avg_mod_list.append(np.mean(modularity_array[:, idx]))
 
 
@@ -238,9 +231,6 @@ for m_idx, n_rnn in enumerate(model_size_list):
     # 定义行数
     rows = 2
 
-    # -- 核心修改 --
-    # figsize 现在可以更自由地设置，因为子图形状由 set_box_aspect 控制
-    # 我们只需要保证有足够的垂直空间即可
     fig_width = 2.8
     fig_height = 3.5 # 给标题、标签和间距留出一些额外空间
     fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(fig_width, fig_height))
@@ -280,15 +270,12 @@ for m_idx, n_rnn in enumerate(model_size_list):
     # 调整子图之间的间距
     plt.subplots_adjust(hspace=0.6) # 增加垂直间距，防止标题和上图重叠
 
-    # 注意：当手动设置 aspect 后，tight_layout() 的效果可能会受限
-    # plt.tight_layout() # 可以尝试使用，但有时会与 set_box_aspect 冲突，subplots_adjust 更可靠
 
     # --- 保存图像 ---
-    figure_path = './figures/Fig3/Fig3c'
+    figure_path = './figures/Fig3/Fig3d'
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
 
-    plt.savefig(f"{figure_path}/Correlation_bar_{n_rnn}_{exp_name}.svg", format='svg', dpi=300)
-    plt.savefig(f"{figure_path}/Correlation_bar_{n_rnn}_{exp_name}.jpg", format='jpg', dpi=300)
-
-    # plt.show()
+    plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.svg", format='svg', dpi=300)
+    plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.jpg", format='jpg', dpi=300)
+    plt.close()
