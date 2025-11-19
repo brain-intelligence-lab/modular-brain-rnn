@@ -36,6 +36,7 @@ for n_rnn in "${n_rnns[@]}"; do
                 --task_list $task_name \
                 --gpu $gpu \
                 --seed $seed \
+                --eval_perf \
                 --init_mode randortho \
                 --log_dir $log_dir \
                 --non_linearity relu \
