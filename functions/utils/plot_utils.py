@@ -70,9 +70,9 @@ def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel,
             perf_avg_all_array.append(perf_avg_seed_array)
         
 
-        epochs_num = perf_avg_all_array[0].shape[-1]
-        modularity_all_array = np.array(modularity_all_array).reshape(-1, epochs_num)
-        perf_avg_all_array = np.array(perf_avg_all_array).reshape(-1, epochs_num)
+        # epochs_num = modularity_all_array[0].shape[-1]
+        modularity_all_array = np.array(modularity_all_array).reshape(-1, modularity_all_array[0].shape[-1])
+        perf_avg_all_array = np.array(perf_avg_all_array).reshape(-1, perf_avg_all_array[0].shape[-1])
         
         modularity_mean = np.mean(modularity_all_array, axis=0)
         modularity_std = np.std(modularity_all_array, axis=0)
