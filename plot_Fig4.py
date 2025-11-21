@@ -21,7 +21,7 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 def start_parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--incremental_path', default='./runs/Fig4bc/incremental', type=str)
-    parser.add_argument('--normal_path', default='./runs/Fig4bc/all-in-one', type=str)
+    parser.add_argument('--normal_path', default='./runs/Fig4bc/all-at-once', type=str)
     parser.add_argument('--random_mask_path', default='./runs/Fig4efg/lottery_ticket_hypo_random', type=str)
     parser.add_argument('--prior_mask_path', default='./runs/Fig4efg/lottery_ticket_hypo_prior_modular', type=str)
     parser.add_argument('--posteriori_mask_path', default='./runs/Fig4efg/lottery_ticket_hypo_posteriori_modular', type=str)
@@ -99,19 +99,19 @@ def plot_figure4b(args):
                 
         axs.set_xticks(x_ticks)
         axs.set_xticklabels(x_tick_labels, rotation=45, fontsize=6)
-        # axs.set_xlim(0, 90)
         axs.tick_params(axis='both', labelsize=5)
         axs.tick_params(axis='both', width=0.25)
-        axs.axvline(x=80, color='green', linestyle='--', linewidth=0.75)
+        # axs.set_xlim(0, 90)
+        # axs.axvline(x=80, color='green', linestyle='--', linewidth=0.75)
         
         color_list = ['#2171A8', '#DA762A']
         axs.set_ylim(0, 0.5)
         if 'incremental' in directory_name:
             color = color_list[1]
-            axs.plot(modularity_mean, label='incremental', linewidth=0.25, color=color)
+            axs.plot(modularity_mean, label='incremental', linewidth=0.5, color=color)
         else:
             color = color_list[0]
-            axs.plot(modularity_mean, label='all-in-one', linewidth=0.25, color=color)
+            axs.plot(modularity_mean, label='all-at-once', linewidth=0.5, color=color)
         
         axs.fill_between(range(modularity_seed_array.shape[1]), modularity_mean - modularity_ste, \
             modularity_mean + modularity_ste, alpha=0.2, color=color)
@@ -141,7 +141,7 @@ def plot_figure4c(args):
     sc_qvalue_list_grow = []
     sc_qvalue_list_fixed = []
 
-    for seed in range(100, 900, 100):
+    for seed in range(100, 2100, 100):
         all_merge_into_one = False
         for step in range(3000, 40000, 500):
             if all_merge_into_one:
@@ -178,20 +178,20 @@ def plot_figure4c(args):
                 # print(len(subgraphs_list))
 
                     
-    qvalue_dict = {'incremental': sc_qvalue_list_grow, 'all-in-one': sc_qvalue_list_fixed}
-    model_list = ['incremental', 'all-in-one',]
+    qvalue_dict = {'incremental': sc_qvalue_list_grow, 'all-at-once': sc_qvalue_list_fixed}
+    model_list = ['incremental', 'all-at-once',]
     data = []
     for _, model_name in enumerate(model_list):
         Modularity_dist = qvalue_dict[model_name]
         for qvalue in Modularity_dist:
-            data.append({'Learning paradigm': model_name, 'Modularity': qvalue})
+            data.append({'Training paradigm': model_name, 'Modularity': qvalue})
 
     df = pd.DataFrame(data)    
 
-    palette = ['#2171A8', '#DA762A'] # all-in-one, incremental
-    names_order = ['incremental', 'all-in-one']
+    palette = ['#2171A8', '#DA762A'] # all-at-once, incremental
+    names_order = ['incremental', 'all-at-once']
 
-    group = 'Learning paradigm'
+    group = 'Training paradigm'
     column = 'Modularity'
 
     fig, ax = plt.subplots(figsize=(2.0, 2.0))
@@ -203,7 +203,7 @@ def plot_figure4c(args):
                                 }, 
                 whiskerprops={'linewidth': 0.25}, medianprops={'linewidth': 0.25}, capprops={'linewidth': 0.25})
     ax = sns.stripplot(x=group, y=column, data=df, 
-                dodge=False, ax=ax, palette=palette, jitter=0.1, size=0.6, color='black', alpha=0.4)
+                dodge=False, ax=ax, palette=palette, jitter=0.1, size=0.8, color='black', alpha=0.7)
 
     box_pairs = []
     for i in range(len(names_order)):
@@ -222,10 +222,10 @@ def plot_figure4c(args):
     ax.spines['right'].set_linewidth(0.25)  
 
     ax.set_title('Induced Subgraphs Comparison', fontsize=6)
-    ax.set_xlabel('Learning paradigm', fontsize=6, labelpad=2)
+    ax.set_xlabel('Training paradigm', fontsize=6, labelpad=2)
     ax.set_ylabel('Modularity', fontsize=6, labelpad=2)
 
-    # plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+    plt.tight_layout()
     plt.savefig('./figures/Fig4/Fig4c.jpg', format='jpg', dpi=300)
     plt.savefig('./figures/Fig4/Fig4c.svg', format='svg', dpi=300)
 

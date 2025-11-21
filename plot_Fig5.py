@@ -2,7 +2,7 @@ import scipy.io
 import numpy as np
 import torch
 from functions.generative_network_modelling.generative_network_modelling import *
-from functions.utils.eval_utils import lock_random_seed
+from functions.utils.math_utils import lock_random_seed
 import matplotlib.pyplot as plt
 import argparse
 import seaborn as sns

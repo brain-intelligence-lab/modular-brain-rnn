@@ -335,7 +335,7 @@ def plot_2h(model_size_list, task_num_list):
         def fmt_p(p): return "< 0.001" if p < 0.001 else f"{p:.3f}"
         
         stat_text = (
-            f"$\\beta_{{strain}} = {slope:.3f}$ ($p_{{fix}} {fmt_p(p_value_fixed)}$)\n"
+            f"$\\beta_{{TDR}} = {slope:.3f}$ ($p_{{fix}} {fmt_p(p_value_fixed)}$)\n"
             f"Rand Effect Test: $p_{{rand}} {fmt_p(p_value_re)}$"
         )
     else:

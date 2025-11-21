@@ -7,10 +7,12 @@ cleanup() {
     exit
 }
 
-python main.py --gen_dataset_files --max_trials 3000000
-
 # 捕获SIGINT信号
 trap 'cleanup' SIGINT
+
+python main.py --gen_dataset_files --max_trials 3000000 
+# 等待数据集生成完成
+
 n_rnn=84
 gpus=(0 1 2 3 4 5 6 7)
 
@@ -22,8 +24,8 @@ index=0
 
 for seed in "${seeds[@]}"; do
     gpu=${gpus[$index]}
-    log_dir="./runs/Fig4bc/all-in-one/n_rnn_${n_rnn}_seed_${seed}"
-    echo "Launching all-in-one mode on GPU $gpu with seed $seed"
+    log_dir="./runs/Fig4bc/all-at-once/n_rnn_${n_rnn}_seed_${seed}"
+    echo "Launching all-at-once mode on GPU $gpu with seed $seed"
     # 确保日志目录存在
     mkdir -p $log_dir
     # 启动训练进程
@@ -36,7 +38,6 @@ for seed in "${seeds[@]}"; do
         --non_linearity relu \
         --init_mode randortho \
         --read_from_file \
-        --eval_perf \
         --conn_mode fixed \
         --eta $eta \
         --conn_num $conn_num \
@@ -62,7 +63,6 @@ for seed in "${seeds[@]}"; do
         --non_linearity relu \
         --init_mode randortho \
         --read_from_file \
-        --eval_perf \
         --conn_mode grow \
         --eta $eta \
         --conn_num $conn_num \

@@ -17,6 +17,7 @@ import pdb
 
 def start_parse():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--reg_factor', default=1.0, type=float)
     parser.add_argument('--n_rnn', default=84, type=int)
     parser.add_argument('--gpu', default=1, type=int)
     parser.add_argument('--seed', default=2024, type=int)
@@ -66,6 +67,15 @@ def gen_hp(args):
         hp['rule_trains'] = args.task_list
         hp['rules'] = hp['rule_trains']
     
+    rule_prob_map = {'contextdm1': 5, 'contextdm2': 5}
+    hp['rule_probs'] = None
+    if hasattr(hp['rule_trains'], '__iter__'):
+        # Set default as 1.
+        rule_prob = np.array(
+                [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
+        hp['rule_probs'] = list(rule_prob / np.sum(rule_prob))
+
+    hp['reg_strength'] = args.reg_factor
     hp['reg_term'] = args.reg_term
     hp['wiring_rule'] = args.wiring_rule
     hp['conn_num'] = args.conn_num
@@ -78,7 +88,7 @@ def gen_hp(args):
     hp['device'] = args.device
 
     if hp['n_rnn'] == 84 and hp['reg_term']:
-        Distance = np.load('/modular-brain-rnn/datasets/brain_hcp_data/84/Raw_dis.npy')
+        Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
         Distance = torch.from_numpy(Distance).to(args.device)
         min_val = Distance.min()
         max_val = Distance.max()
@@ -99,14 +109,6 @@ def _run_training_loop(args, hp, model, writer: SummaryWriter):
         else:
             model.empty_connections()
         
-    rule_prob_map = {'contextdm1': 5, 'contextdm2': 5}
-    hp['rule_probs'] = None
-    if hasattr(hp['rule_trains'], '__iter__'):
-        # Set default as 1.
-        rule_prob = np.array(
-                [rule_prob_map.get(r, 1.) for r in hp['rule_trains']])
-        hp['rule_probs'] = list(rule_prob / np.sum(rule_prob))
-
     step = 0
     loss_list = []
 
@@ -349,9 +351,11 @@ if __name__ == '__main__':
     args = start_parse()
     lock_random_seed(seed=args.seed)
     assert args.conn_mode =='full' or args.conn_num != -1
+    device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')
+    args.device = device
     
     if args.gen_dataset_files:
-        hp = task.get_default_hp(args.rule_set)
+        hp = gen_hp(args)
         batch_size = hp['batch_size_train']
         NUM_OF_BATCHES = int(args.max_trials // batch_size)
         train_dataset = task.Multitask_Batched(hp, batch_size * NUM_OF_BATCHES, \
@@ -364,8 +368,6 @@ if __name__ == '__main__':
     
     writer = SummaryWriter(log_dir=args.log_dir)
     log_dir = writer.logdir
-    device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')
-    args.device = device
 
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     args_file_path = os.path.join(log_dir, "args.txt")
