@@ -116,6 +116,9 @@ python plot_Fig2.py
 
 Results traning log and figures can be found in the `./runs` and `./figures` respectively.
 
+NOTE:
+Before each training session, please clear or rename the previous training's directory (e.g., mv ./runs/Fig2a ./runs/Fig2a_pre) to prevent the SummaryWriter from appending new log data, which could lead to incorrect plotting.
+
 
 # Overall Workflow
 ![](./figures/workflow.svg)

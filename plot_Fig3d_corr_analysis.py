@@ -70,9 +70,14 @@ def plot_scatter(x_array, y_array, xlabel='Modularity', ylabel='Performance', fi
     plt.savefig(f"./figures/Fig3/Fig3d/{file_name}.jpg", format='jpg', dpi=300)
     plt.close()
 
+
+figure_path = './figures/Fig3/Fig3d'
+if not os.path.exists(figure_path):
+    os.makedirs(figure_path)
+
 task_num = 20
 
-model_size_list = [8]
+model_size_list = [32, 16, 8]
 for m_idx, n_rnn in enumerate(model_size_list):
     runs_name = f'Fig3d_{n_rnn}'
     paths = list_files(f"./runs/{runs_name}")
@@ -269,12 +274,6 @@ for m_idx, n_rnn in enumerate(model_size_list):
 
     # 调整子图之间的间距
     plt.subplots_adjust(hspace=0.6) # 增加垂直间距，防止标题和上图重叠
-
-
-    # --- 保存图像 ---
-    figure_path = './figures/Fig3/Fig3d'
-    if not os.path.exists(figure_path):
-        os.makedirs(figure_path)
 
     plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.svg", format='svg', dpi=300)
     plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.jpg", format='jpg', dpi=300)

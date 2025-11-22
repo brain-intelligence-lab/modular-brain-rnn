@@ -21,7 +21,7 @@ for seed in "${seeds[@]}"; do
     for task_num in "${task_num_list[@]}"; do
         for n_rnn in "${n_rnns[@]}"; do
             gpu=${gpus[$index]}
-            log_dir="./runs/Fig2_b-h/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
+            log_dir="./runs/Fig2b-h/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
             echo "Launching task_num $task_num on GPU $gpu with seed $seed"
             # 确保日志目录存在
             mkdir -p $log_dir
@@ -44,7 +44,7 @@ for seed in "${seeds[@]}"; do
     done
 
     if (( seed % 200 == 0 )); then
-        echo "All jobs for n_rnn=$n_rnn with seed<=$seed started at $(date)"
+        echo "All jobs for seed<=$seed started at $(date)"
         wait  # 等待所有后台任务完成
         index=0
     fi

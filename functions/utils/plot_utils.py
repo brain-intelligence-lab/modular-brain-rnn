@@ -14,6 +14,9 @@ def list_files(directory, name):
 
     if len(path_list) == 1:
         return path_list[0]
+
+    assert len(path_list) == 1, f"The len of path_list: {len(path_list)} \
+        should be 1, given directory: {directory}, name: {name}"
     return None
 
 def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False):
@@ -25,6 +28,10 @@ def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False)
             file_name = f"n_rnn_{model_size}_task_{task}_seed_{seed_name}"
         paths = list_files(directory_name, file_name)
         seed_paths_list.append(paths)
+
+    # the number of seed_files should be equal to len(seed_list)
+    assert len(seed_paths_list) == len(seed_list), \
+        f"seed_paths_list_len:{len(seed_paths_list)}, seed_list_len:{len(seed_list)}"
 
     modularity_seed_array = []
     perf_avg_seed_array = []
@@ -49,6 +56,9 @@ def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False)
     return modularity_seed_array, perf_avg_seed_array
 
 def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel, **kwargs):
+    # check if path exists
+    assert os.path.exists(directory_name), f"{directory_name} not exists!"
+
     plot_perf = kwargs.get('plot_perf', True)
     linelabel = kwargs.get('linelabel', None)
     linewidth = kwargs.get('linewidth', 1.0)
@@ -65,7 +75,12 @@ def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel,
         for task_idx, task_name in enumerate(task_name_list):
             modularity_seed_array, perf_avg_seed_array = get_seed_avg(directory_name, \
                 model_size, task=task_name, seed_list=seed_list, chance_flag=chance_flag)
-
+            # try:
+            #     modularity_seed_array, perf_avg_seed_array = get_seed_avg(directory_name, \
+            #         model_size, task=task_name, seed_list=seed_list, chance_flag=chance_flag)
+            # except:
+            #     import pdb
+            #     pdb.set_trace()
             modularity_all_array.append(modularity_seed_array)
             perf_avg_all_array.append(perf_avg_seed_array)
         

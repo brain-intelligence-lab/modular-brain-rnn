@@ -26,7 +26,7 @@ for seed in "${seeds[@]}"; do
         for mask_type in "${mask_types[@]}"; do
             gpu=${gpus[$index]}
             # 构造 log_dir 路径
-            log_dir="./runs/Fig4_efg/lottery_ticket_hypo_${mask_type}/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
+            log_dir="./runs/Fig4efg/lottery_ticket_hypo_${mask_type}/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
             load_model_path="./runs/Fig2b-h/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
             echo "Launching task_num $task_num on GPU $gpu with seed $seed"
             # 确保日志目录存在

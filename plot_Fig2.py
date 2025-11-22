@@ -72,27 +72,27 @@ def plot_fig2d(color_dict, N=15):
         plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel='Modularity', \
         plot_perf=False, linelabel=f'# Single task', color_dict=color_dict)
 
-    iterations = np.arange(0, 47000, 500) 
+    # iterations = np.arange(0, 47000, 500) 
 
-    t_stat, p_value = stats.ttest_ind(multitask_modularity_array, singletask_modularity_array)
+    # t_stat, p_value = stats.ttest_ind(multitask_modularity_array, singletask_modularity_array)
 
-    first_line = "Iterations"
-    second_line = "P value"
+    # first_line = "Iterations"
+    # second_line = "P value"
 
-    for i in range(0, len(iterations), 6):
-        if iterations[i] > 10000 and iterations[i] <= 42000:
-            first_line += f" & {iterations[i]}"
-            second_line += f" & {p_value[i]:.4f}"
+    # for i in range(0, len(iterations), 6):
+    #     if iterations[i] > 10000 and iterations[i] <= 42000:
+    #         first_line += f" & {iterations[i]}"
+    #         second_line += f" & {p_value[i]:.4f}"
 
-    print(first_line)
-    print(second_line)
+    # print(first_line)
+    # print(second_line)
 
-    # plt.title(f'Single task vs Multi-task\n(# Hidden Neurons: {N})', fontsize=6)
-    plt.title(f'Single task vs Multi-task', fontsize=6)
+    plt.title(f'Single task vs Multi-task\n(# Hidden Neurons: {N})', fontsize=6)
+    # plt.title(f'Single task vs Multi-task', fontsize=6)
     plt.tight_layout()
         
-    fig.savefig(f'./figures/Fig2/Fig2c_{N}.jpg', format='jpg', dpi=300)
-    fig.savefig(f'./figures/Fig2/Fig2c_{N}.svg', format='svg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2d_{N}.jpg', format='jpg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2d_{N}.svg', format='svg', dpi=300)
     
 def plot_fig2efg(model_size_list, task_num_list, color_dict):
     directory_name = "./runs/Fig2b-h"
@@ -135,11 +135,11 @@ def plot_fig2efg(model_size_list, task_num_list, color_dict):
         axs.legend(loc='lower right', bbox_to_anchor=(0.99, 0.01), frameon=False, fontsize=6)
 
         plt.tight_layout()
-        fig.savefig(f'./figures/Fig2/Fig2de_{model_size}.jpg', format='jpg', dpi=300)
-        fig.savefig(f'./figures/Fig2/Fig2de_{model_size}.svg', format='svg', dpi=300)
+        fig.savefig(f'./figures/Fig2/Fig2efg_{model_size}.jpg', format='jpg', dpi=300)
+        fig.savefig(f'./figures/Fig2/Fig2efg_{model_size}.svg', format='svg', dpi=300)
 
 
-def plot_2h(model_size_list, task_num_list):
+def plot_2h(model_size_list, task_num_list, load_step=46500):
     from functions.utils.eval_utils import ActivationHook
     from functions.utils.math_utils import calculate_effective_dimensionality
     import datasets.multitask as task
@@ -154,7 +154,7 @@ def plot_2h(model_size_list, task_num_list):
                      'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
     
 
-    results_filename = f'./runs/Fig2b-h/representational_strain.pkl'
+    results_filename = f'./runs/Fig2b-h/TDR.pkl'
     if os.path.exists(results_filename):
         print(f"Found serialized results file '{results_filename}'. Loading data...")
         with open(results_filename, 'rb') as f:
@@ -181,10 +181,8 @@ def plot_2h(model_size_list, task_num_list):
                     print(f"Processing: Size={model_size}, Tasks={task_num}, Seed={seed}")
                     
                     # --- Load Model ---
-                    model_path = f'{directory_name}/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{46500}.pth'
-                    if not os.path.exists(model_path):
-                        print(f"Warning: Model not found, skipping: {model_path}")
-                        continue
+                    model_path = f'{directory_name}/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
+                    assert os.path.exists(model_path), f"Warning: Model not found: {model_path}"
                     
                     model = torch.load(model_path, map_location=device) 
                     model.eval() # Set to evaluation mode
@@ -377,9 +375,9 @@ def plot_2h(model_size_list, task_num_list):
     
     plt.tight_layout()
         
-    fig.savefig(f'./figures/Fig2/Fig2_StrainPlot.jpg', format='jpg', dpi=300)
-    fig.savefig(f'./figures/Fig2/Fig2_StrainPlot.svg', format='svg', dpi=300)
-    print("Saved new 'Strain Plot' to ./figures/Fig2/Fig2_StrainPlot.svg")
+    fig.savefig(f'./figures/Fig2/Fig2h_TDR.jpg', format='jpg', dpi=300)
+    fig.savefig(f'./figures/Fig2/Fig2h_TDR.svg', format='svg', dpi=300)
+    print("Saved new 'Strain Plot' to ./figures/Fig2/Fig2h_TDR.svg")
     
     # --- UPDATED FINAL PRINT ---
     print(f"Mixed-Effect Model: Slope (strain)={slope:.4f}, p={p_value_fixed:.5e}")
