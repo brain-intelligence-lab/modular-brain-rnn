@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 定义一个函数来处理信号
+# Define a function to handle signals
 cleanup() {
     echo "Caught SIGINT signal. Cleaning up..."
-    kill $(jobs -p)  # 杀死所有子进程
+    kill $(jobs -p)  # Kill all child processes
     exit
 }
 
-# 捕获SIGINT信号
+# Capture SIGINT signal
 trap 'cleanup' SIGINT
 
 n_rnns=(8 16 32 64)
@@ -27,9 +27,9 @@ for n_rnn in "${n_rnns[@]}"; do
             gpu=${gpus[$index]}
             log_dir="./runs/Fig2a/n_rnn_${n_rnn}_task_${task_name}_seed_${seed}"
             echo "Launching task_name $task_name on GPU $gpu with seed $seed"
-            # 确保日志目录存在
+            # Ensure log directory exists
             mkdir -p $log_dir
-            # 启动训练进程
+            # Start training process
             python main.py \
                 --n_rnn $n_rnn \
                 --rec_scale_factor 0.1 \
@@ -47,7 +47,7 @@ for n_rnn in "${n_rnns[@]}"; do
 
         if (( seed % 200 == 0 )); then
             echo "All jobs for n_rnn=$n_rnn with seed<=$seed started at $(date)"
-            wait  # 等待所有后台任务完成
+            wait  # Wait for all background tasks to complete
             index=0
         fi
     done
@@ -64,9 +64,9 @@ done
 #             gpu=${gpus[$index]}
 #             log_dir="./runs/Fig2a/chance_n_rnn_${n_rnn}_task_${task_name}_seed_${seed}"
 #             echo "Launching task_name $task_name on GPU $gpu with seed $seed (at chance_level)"
-#             # 确保日志目录存在
+#             # Ensure log directory exists
 #             mkdir -p $log_dir
-#             # 启动训练进程
+#             # Start training process
 #             python main.py \
 #                 --n_rnn $n_rnn \
 #                 --rec_scale_factor 0.1 \
@@ -83,7 +83,7 @@ done
 #         done
 #     done
 #     echo "All jobs for n_rnn=$n_rnn seed=$seed started at $(date)"
-#     wait  # 等待所有后台任务完成
+#     wait  # Wait for all background tasks to complete
 # done
 
 
@@ -101,9 +101,9 @@ done
 #                 gpu=${gpus[$index]}
 #                 log_dir="./runs/Fig2a_${rnn_type}/n_rnn_${n_rnn}_task_${task_name}_seed_${seed}"
 #                 echo "Launching task_name $task_name on GPU $gpu with seed $seed"
-#                 # 确保日志目录存在
+#                 # Ensure log directory exists
 #                 mkdir -p $log_dir
-#                 # 启动训练进程
+#                 # Start training process
 #                 python main.py \
 #                     --n_rnn $n_rnn \
 #                     --rec_scale_factor 0.1 \
@@ -120,6 +120,6 @@ done
 #             done
 #         done
 #         echo "All jobs for n_rnn=$n_rnn with seed=$seed started at $(date)"
-#         wait  # 等待所有后台任务完成
+#         wait  # Wait for all background tasks to complete
 #     done
 # done

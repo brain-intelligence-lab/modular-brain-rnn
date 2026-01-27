@@ -4,22 +4,23 @@ import torch.nn.functional as F
 import random
 
 # ==================================
-# 数据处理：预分类与生成图片对
+# Data processing: Pre-classification and generating image pairs
 # ==================================
 def get_cifar10_class_indices(dataset):
     """
-    遍历数据集，返回一个字典，其中 key 是类别标签，value 是该类别所有图片的索引列表。
+    Iterate through the dataset and return a dictionary where key is the class label
+    and value is the list of indices of all images in that class.
     """
-    print("正在预处理 CIFAR10 数据集，按类别对图片索引进行分类...")
+    print("Preprocessing CIFAR10 dataset, classifying image indices by class...")
     class_indices = {i: [] for i in range(10)}
     for idx, (_, label) in enumerate(dataset):
         class_indices[label].append(idx)
-    print("预处理完成。")
+    print("Preprocessing complete.")
     return class_indices
 
 class Cifar10PairsDataset(torch.utils.data.Dataset):
     """
-    为Siamese网络生成正样本对和负样本对的自定义数据集。
+    Custom dataset for generating positive and negative sample pairs for Siamese network.
     """
     def __init__(self, original_dataset, class_indices, classes_to_use:set, transform=None):
         self.original_dataset = original_dataset
@@ -30,19 +31,19 @@ class Cifar10PairsDataset(torch.utils.data.Dataset):
 
     def _create_pairs(self):
         pairs = []
-        # 获取在选定类别内的所有图片索引
+        # Get all image indices within selected classes
         all_indices_in_scope = [idx for class_label in self.classes_to_use for idx in self.class_indices[class_label]]
-        
+
         for idx1 in all_indices_in_scope:
             label1 = self.original_dataset.targets[idx1]
-            
-            # 创建一个正样本对 (label=0.0)
+
+            # Create a positive sample pair (label=0.0)
             idx2 = random.choice(self.class_indices[label1])
-            while idx1 == idx2: # 确保不是同一张图片
+            while idx1 == idx2: # Ensure not the same image
                 idx2 = random.choice(self.class_indices[label1])
             pairs.append((idx1, idx2, 0.0))
 
-            # 创建一个负样本对 (label=1.0)
+            # Create a negative sample pair (label=1.0)
             neg_class_label = random.choice([c for c in self.classes_to_use if c != label1])
             neg_idx2 = random.choice(self.class_indices[neg_class_label])
             pairs.append((idx1, neg_idx2, 1.0))
@@ -73,12 +74,12 @@ class ContrastiveLoss(nn.Module):
 
     def forward(self, embedding1, embedding2, label):
         euclidean_distance = F.pairwise_distance(embedding1, embedding2, keepdim=True)
-        
-        # 正样本对的损失
+
+        # Loss for positive sample pairs
         loss_positive = (1 - label) * torch.pow(euclidean_distance, 2)
-        # 负样本对的损失
+        # Loss for negative sample pairs
         loss_negative = label * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2)
-        
+
         loss_contrastive = torch.mean(loss_positive + loss_negative)
-        
+
         return loss_contrastive

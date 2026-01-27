@@ -79,8 +79,8 @@ for i, step in enumerate(tqdm(step_list)):
             neuron_activations = hidden_states_list[task_i][:,neuron_id].cpu()
             x, _ = np.histogram(neuron_activations, bins=bins)
             neuron_dist.append(x)
-        data_matrix = np.array(neuron_dist) 
-        correlation_matrix = np.corrcoef(data_matrix) # task_num * task_num 该神经元对不同任务参与度的相似性
+        data_matrix = np.array(neuron_dist)
+        correlation_matrix = np.corrcoef(data_matrix) # task_num * task_num similarity of this neuron's participation across different tasks
         rs_list.append(correlation_matrix)
     
     
@@ -89,11 +89,11 @@ for i, step in enumerate(tqdm(step_list)):
     for neuron_i in range(model_size):
         matrix_i = rs_list[neuron_i]
         tri_upper_indices = np.triu_indices(n=matrix_i.shape[0], k=1)
-        matrix_i_elements = matrix_i[tri_upper_indices] # 任务参与度矩阵的向量化  
-        matrix_elements_list.append(matrix_i_elements) 
-        
+        matrix_i_elements = matrix_i[tri_upper_indices] # Vectorization of task participation matrix
+        matrix_elements_list.append(matrix_i_elements)
+
     data_matrix = np.array(matrix_elements_list)
-    corr_matrix = np.corrcoef(data_matrix) # 不同神经元基于任务参与度的相似性
+    corr_matrix = np.corrcoef(data_matrix) # Similarity between different neurons based on task participation
         
     handle.remove()
 
@@ -136,21 +136,21 @@ for i, step in enumerate(tqdm(step_list)):
 
 
 plt.tight_layout()
-# 调整不同row_matrices之间的间距
-plt.subplots_adjust(hspace=0.00)  
+# Adjust spacing between different row_matrices
+plt.subplots_adjust(hspace=0.00)
 
-# 添加 colorbar 并将 label 移动到左侧
+# Add colorbar and move label to left
 cbar = plt.colorbar(im, ax=plt.gcf().get_axes(), orientation='vertical')
 
-cbar.ax.yaxis.set_tick_params(labelsize=5)  # 控制 colorbar 刻度字体大小
-cbar.outline.set_linewidth(0.25)  
+cbar.ax.yaxis.set_tick_params(labelsize=5)  # Control colorbar tick label font size
+cbar.outline.set_linewidth(0.25)
 cbar.ax.yaxis.set_tick_params(width=0.25, length=1.0)
 cbar.ax.yaxis.set_tick_params(pad=0)
-        
-# 设置 colorbar 的标签并将其旋转以显示在左侧
+
+# Set colorbar label and rotate it to display on left
 cbar.set_label('Similarity', labelpad=2, fontsize=6)
 
-# 调整 colorbar 标签的位置
+# Adjust colorbar label position
 cbar.ax.yaxis.set_label_position('left')
 
 # plt.colorbar(im, ax=plt.gcf().get_axes(), orientation='vertical', label='Similarity')
@@ -158,25 +158,25 @@ plt.savefig(f'./figures/Fig3/Fig3c/Neurons_cluster{model_size}_{task_num}.svg', 
 plt.savefig(f'./figures/Fig3/Fig3c/Neurons_cluster{model_size}_{task_num}.jpg', format='jpg', dpi=300)
 
 
-# 检查 q_value_list 和 step_list 是否长度一致
-assert len(q_value_list) == len(step_list), "q_value_list 和 step_list 长度必须一致"
+# Check if q_value_list and step_list have the same length
+assert len(q_value_list) == len(step_list), "q_value_list and step_list must have the same length"
 
-# 绘制 q_value_list 的变化曲线
+# Plot variation curve of q_value_list
 plt.figure(figsize=(5, 5))
 plt.plot(step_list, q_value_list, marker='o', linestyle='-', label='Q Value')
 
-# 添加图形的标题和坐标轴标签
+# Add figure title and axis labels
 # plt.title('Modularity based on Neural Similarity Over Iterations', fontsize=12)
 plt.xlabel('Iterations', fontsize=7)
 plt.ylabel('Modularity', fontsize=7)
 
-# 添加网格
+# Add grid
 plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
 
-# 添加图例
+# Add legend
 plt.legend(fontsize=5)
 
-# 调整 x 轴刻度，确保清晰显示
+# Adjust x-axis ticks to ensure clear display
 plt.xticks(fontsize=6)
 plt.yticks(fontsize=6)
 

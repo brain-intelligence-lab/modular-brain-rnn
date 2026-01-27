@@ -67,15 +67,15 @@ def test(loader, model, task_idx=None):
     auc_scores = []
 
     if task_idx != -1:
-        # **STL 模式 (单任务)**
-        # 此时 y_pred_tensor 只有一列 [N, 1]， y_true_tensor 有多列 [N, 12]
+        # **STL mode (single task)**
+        # At this time y_pred_tensor has only one column [N, 1], y_true_tensor has multiple columns [N, 12]
         
-        # 1. 选取正确的真实标签 (task_idx 列)
+        # 1. Select correct true labels (task_idx column)
         y_true_task = y_true_tensor[:, task_idx]
-        # 2. 选取模型输出 (STL模型只有一个输出，即第0列)
+        # 2. Select model output (STL model has only one output, i.e., column 0)
         y_pred_task = y_pred_tensor[:, 0]
         
-        # 计算该单任务的AUC
+        # Calculate AUC for this single task
         is_labeled = ~torch.isnan(y_true_task)
         y_true_labeled = y_true_task[is_labeled].numpy()
         y_pred_labeled = y_pred_task[is_labeled].numpy()
@@ -87,25 +87,25 @@ def test(loader, model, task_idx=None):
             except ValueError:
                 pass
     else:
-        # **MTL 模式 (多任务)** - 保持原始逻辑
+        # **MTL mode (multi-task)** - Keep original logic
         num_tasks = y_true_tensor.shape[1]
         
         for i in range(num_tasks):
             y_true_task = y_true_tensor[:, i]
             y_pred_task = y_pred_tensor[:, i]
             
-            # 过滤掉NaN标签
+            # Filter out NaN labels
             is_labeled = ~torch.isnan(y_true_task)
             y_true_labeled = y_true_task[is_labeled].numpy()
             y_pred_labeled = y_pred_task[is_labeled].numpy()
             
-            # 必须同时存在正负样本才能计算AUC
+            # Must have both positive and negative samples to calculate AUC
             if len(np.unique(y_true_labeled)) > 1:
                 try:
                     auc = roc_auc_score(y_true_labeled, y_pred_labeled)
                     auc_scores.append(auc)
                 except ValueError:
-                    # 某些罕见情况下，即使unique > 1，也可能出错
+                    # In some rare cases, even if unique > 1, errors may still occur
                     pass
 
     return np.mean(auc_scores) if auc_scores else 0.0
@@ -113,16 +113,16 @@ def test(loader, model, task_idx=None):
 
 def load_data_and_plot(hidden_channels, seed_name_list, logdir="./runs/cnn_models_data/"):
 
-    print("\n开始处理和绘制结果...")
+    print("\nStarting to process and plot results...")
     global_min = 1000000
 
-    # --- 创建绘图窗口 ---
+    # --- Create plotting window ---
     fig = plt.figure(figsize=(12.0, 4.0))
     ax1 = plt.subplot(1, 3, 1)
     ax2 = plt.subplot(1, 3, 2)
     ax3 = plt.subplot(1, 3, 3)
 
-    # 定义颜色列表，以便为不同的 class_num 分配不同的颜色
+    # Define color list to assign different colors for different class_num
     color_list = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
     task_idx_list = [i for i in range(-1, 12)]
@@ -173,7 +173,7 @@ def load_data_and_plot(hidden_channels, seed_name_list, logdir="./runs/cnn_model
                             loss_avg_list.append(v.simple_value)
                         
             except Exception as e:
-                print(f"读取文件 {events_file} 时出错: {e}")
+                print(f"Error reading file {events_file}: {e}")
                 continue
             
             if dirt_lpa_mod_list:
@@ -187,20 +187,20 @@ def load_data_and_plot(hidden_channels, seed_name_list, logdir="./runs/cnn_model
 
         assert dirt_lpa_mod_list and weight_in_mod_list and weight_out_mod_list and loss_avg_array
         
-        # 找到最短的序列长度，以对齐数据
+        # Find the shortest sequence length to align data
         min_len = min(len(arr) for arr in dirt_lpa_mod_array + weight_in_mod_array + weight_out_mod_array + loss_avg_array)
         global_min = min(global_min, min_len)
         min_len = global_min
         print(min_len)
         
 
-        # 截断所有数组到最短长度并堆叠
+        # Truncate all arrays to shortest length and stack
         dirt_lpa_mod_array = np.stack([arr[:min_len] for arr in dirt_lpa_mod_array], axis=0)
         weight_in_mod_array = np.stack([arr[:min_len] for arr in weight_in_mod_array], axis=0)
         weight_out_mod_array = np.stack([arr[:min_len] for arr in weight_out_mod_array], axis=0)
         loss_avg_array = np.stack([arr[:min_len] for arr in loss_avg_array], axis=0)
 
-        # --- 计算均值和标准误差 ---
+        # --- Calculate mean and standard error ---
         dirt_lpa_mod_mean = np.mean(dirt_lpa_mod_array, axis=0)
         dirt_lpa_mod_ste = np.std(dirt_lpa_mod_array, axis=0) / np.sqrt(dirt_lpa_mod_array.shape[0])
 
@@ -216,7 +216,7 @@ def load_data_and_plot(hidden_channels, seed_name_list, logdir="./runs/cnn_model
         analysis_steps = list(range(args.analyze_every_n_batches, (min_len + 1) * args.analyze_every_n_batches, args.analyze_every_n_batches))
         analysis_steps = analysis_steps[:min_len]
 
-        # --- 在对应的子图上绘制曲线 ---
+        # --- Plot curves on corresponding subplots ---
         color = color_list[i]
         ax1.plot(analysis_steps, dirt_lpa_mod_mean, label=label_name[i], color=color)
         ax1.fill_between(analysis_steps, dirt_lpa_mod_mean - dirt_lpa_mod_ste, dirt_lpa_mod_mean + dirt_lpa_mod_ste, 
@@ -233,7 +233,7 @@ def load_data_and_plot(hidden_channels, seed_name_list, logdir="./runs/cnn_model
                          color=color, alpha=0.2)
         
 
-    # --- 设置子图的标题、标签和图例 ---
+    # --- Set subplot titles, labels, and legends ---
     ax1.set_xlabel('Global Training Batches')
     ax1.set_ylabel('Modularity')
     ax1.set_title(f'DIRT_LPA_wb_plus')
@@ -252,7 +252,7 @@ def load_data_and_plot(hidden_channels, seed_name_list, logdir="./runs/cnn_model
     ax3.legend()
     ax3.grid(True)
 
-    # --- 调整布局并保存图片 ---
+    # --- Adjust layout and save figure ---
     plt.suptitle(f'Modularity Evolution During Training on Tox21 Dataset\
             \n(# hidden_channels: {hidden_channels})', fontsize=16)
     plt.tight_layout()
@@ -274,7 +274,7 @@ if __name__ == "__main__":
 
     lock_random_seed(seed=args.seed)    
     
-    # --- 数据集加载与准备 ---
+    # --- data集Load与Prepare ---
     dataset = MoleculeNet(root=args.dataset_dir, name="Tox21")
     shuffled_indices = torch.randperm(len(dataset))
 
@@ -304,12 +304,12 @@ if __name__ == "__main__":
     task_idx = args.task_idx
 
     if task_idx == -1:
-        print("\n--- 开始多任务学习 (MTL) 实验 ---")
+        print("\n--- Start多task学习 (MTL) experiment ---")
 
-        # 根据索引创建数据集
+        # 根据indexcreatedata集
 
-        print(f"训练集大小: {len(train_dataset)}")
-        print(f"验证集大小: {len(val_dataset)}")
+        print(f"training集size: {len(train_dataset)}")
+        print(f"verify集size: {len(val_dataset)}")
 
         model = GCN(
             hidden_channels=args.hidden_channels,
@@ -322,10 +322,10 @@ if __name__ == "__main__":
 
     else:
 
-        print("\n--- 开始单任务学习 (STL) 实验 ---")
+        print("\n--- Start单task学习 (STL) experiment ---")
         all_tasks_val_aucs = []
 
-        # 每次都重新初始化一个新模型
+        # 每次都重新Initialize一个新model
         model = GCN(
             hidden_channels=args.hidden_channels,
             num_node_features=dataset.num_node_features,
@@ -336,7 +336,7 @@ if __name__ == "__main__":
         task_train_indices = [i for i, data in enumerate(train_dataset) if not torch.isnan(data.y[0, task_idx])]
         task_val_indices = [i for i, data in enumerate(val_dataset) if not torch.isnan(data.y[0, task_idx])]
             
-        # 从已经划分好的训练/验证集中再次筛选
+        # 从已经划分好的training/verify集中再次筛选
         task_train_subset = torch.utils.data.Subset(train_dataset, task_train_indices)
         task_val_subset = torch.utils.data.Subset(val_dataset, task_val_indices)
 
@@ -379,21 +379,21 @@ if __name__ == "__main__":
             
                 weights_list = []
                 for idx, layer_to_analyze in enumerate(layers_to_scale):
-                    print(f" 开始分析层 '{layer_to_analyze}' 的权重模块度 (Global Batch: {global_batch_counter})...")
+                    print(f" Startanalysislayer '{layer_to_analyze}' 的weightmodule度 (Global Batch: {global_batch_counter})...")
 
                     target_layer = None
                     try:
                         target_layer = dict(model.named_modules())[layer_to_analyze]
 
                     except KeyError:
-                        print(f"错误：模型中找不到名为 '{layer_to_analyze}' 的层。")
-                        print(f"可用层包括: {[name for name, _ in model.named_modules() if '.' not in name and name != '']}")
+                        print(f"error：model中找不到名为 '{layer_to_analyze}' 的layer。")
+                        print(f"可用layer包括: {[name for name, _ in model.named_modules() if '.' not in name and name != '']}")
                 
 
                     weight_tensor = target_layer.lin.weight.detach()
                 
-                    # --- 处理权重张量 ---
-                    if weight_tensor.dim() == 4: # 卷积层权重
+                    # --- Processweight张量 ---
+                    if weight_tensor.dim() == 4: # 卷积layerweight
 
                         if idx == 0: 
                             # 形状: (out_channels, in_channels, kH, kW) 展开转置为 2D: (in_channels * kH * kW, out_channels)
@@ -403,28 +403,28 @@ if __name__ == "__main__":
                             weight_tensor_new = weight_tensor.permute(1, 0, 2, 3)
                             weight_tensor_new = weight_tensor_new.reshape(weight_tensor_new.size(0), -1)
 
-                        print(f" 检测到4D卷积层权重 (形状: {weight_tensor.shape}), 已展开为 2D 矩阵并转置 (形状: {weight_tensor_new.shape})")
+                        print(f" 检测到4D卷积layerweight (形状: {weight_tensor.shape}), 已展开为 2D matrix并转置 (形状: {weight_tensor_new.shape})")
 
-                    elif weight_tensor.dim() == 2: # 全连接层权重
+                    elif weight_tensor.dim() == 2: # 全connectionlayerweight
                         weight_tensor_new = weight_tensor
-                        print(f" 检测到2D全连接层权重 (形状: {weight_tensor.shape})")
+                        print(f" 检测到2D全connectionlayerweight (形状: {weight_tensor.shape})")
                     else:
-                        raise ValueError(f"不支持的权重维度: {weight_tensor.dim()}")
+                        raise ValueError(f"不支持的weightdimension: {weight_tensor.dim()}")
                     
                     weights_list.append(weight_tensor_new.cpu().numpy())
 
                     if idx == 1:
 
-                        if weight_tensor.dim() == 4: # 卷积层权重
+                        if weight_tensor.dim() == 4: # 卷积layerweight
                             # 形状: (out_channels, in_channels, kH, kW) 展开为 2D: (out_channels, in_channels * kH * kW)
                             reshaped_weight = weight_tensor.reshape(weight_tensor.size(0), -1)
-                            print(f" 检测到4D卷积层权重 (形状: {weight_tensor.shape}), 已展开为 2D 矩阵 (形状: {reshaped_weight.shape})")
+                            print(f" 检测到4D卷积layerweight (形状: {weight_tensor.shape}), 已展开为 2D matrix (形状: {reshaped_weight.shape})")
                             weight_tensor = reshaped_weight
 
-                        elif weight_tensor.dim() == 2: # 全连接层权重
-                            print(f" 检测到2D全连接层权重 (形状: {weight_tensor.shape})。")
+                        elif weight_tensor.dim() == 2: # 全connectionlayerweight
+                            print(f" 检测到2D全connectionlayerweight (形状: {weight_tensor.shape})。")
                         else:
-                            raise ValueError(f"不支持的权重维度: {weight_tensor.dim()}")
+                            raise ValueError(f"不支持的weightdimension: {weight_tensor.dim()}")
 
                         weight_numpy = np.abs(weight_tensor.cpu().numpy())
                         mod1, mod2 = calculate_modularity_in_r(weight_numpy, args.r_script_path)

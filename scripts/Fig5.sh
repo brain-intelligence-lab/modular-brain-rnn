@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 定义一个函数来处理信号
+# Define a function to handle signals
 cleanup() {
     echo "Caught SIGINT signal. Cleaning up..."
-    kill $(jobs -p)  # 杀死所有子进程
+    kill $(jobs -p)  # Kill all child processes
     exit
 }
 
-# 捕获SIGINT信号
+# Capture SIGINT signal
 trap 'cleanup' SIGINT
 
 python main.py --gen_dataset_files --max_trials 3000000
@@ -26,9 +26,9 @@ for n_rnn in "${n_rnns[@]}"; do
 
         log_dir="./runs/Fig5_data/${n_rnn}/n_rnn_${n_rnn}_task_${task_num}_seed_${seed}"
         echo "Launching task_num $task_num on GPU $gpu with seed $seed"
-        # 确保日志目录存在
+        # Ensure log directory exists
         mkdir -p $log_dir
-        # 启动训练进程
+        # Start training process
         python main.py \
             --n_rnn $n_rnn \
             --rec_scale_factor 0.1 \
@@ -50,9 +50,9 @@ for n_rnn in "${n_rnns[@]}"; do
     
 
         if (( seed % 24 == 0 )); then
-            wait  # 等待所有后台任务完成
+            wait  # Wait for all background tasks to complete
             echo "All jobs for n_rnn=$n_rnn with seed<=$seed completed at $(date)"
-        fi    
+        fi
 
     done
 done

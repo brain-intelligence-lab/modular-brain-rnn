@@ -21,8 +21,8 @@ def find_connected_components(adj_matrix):
     visited = {i: False for i in range(n)}  
     components = []  
 
-    def dfs(node, component):  
-        # 标记当前节点为已访问  
+    def dfs(node, component):
+        # Mark current node as visited
         visited[node] = True  
         component.append(node)        
         for neighbor in range(n):  
@@ -134,62 +134,62 @@ def generate_adj_matrix(
     seed: int = None
 ) -> np.ndarray:
     """
-    根据给定的总连接数 total_connections 和各区域的连接“密度”权重，生成一个邻接矩阵。
+    Generate an adjacency matrix based on total_connections and connection density weights.
 
-    此函数确保生成的图中边的总数恰好为 total_connections。
+    This function ensures the generated graph has exactly total_connections edges.
 
     Args:
-        core_sizes (List[int]): 每个核心的大小，例如 [30, 25]。
-        periphery_size (int): 边缘区域的大小。
-        total_connections (int): 图中需要生成的总连接数（边的数量）。
-        intra_core_weight (float): 核心内部连接的相对权重。
-        inter_core_weight (float): 不同核心之间连接的相对权重。
-        core_periphery_weight (float): 核心与边缘之间连接的相对权重。
-        intra_periphery_weight (float): 边缘内部连接的相对权重。
-        seed (int, optional): 用于复现结果的随机种子。
+        core_sizes (List[int]): Size of each core, e.g., [30, 25].
+        periphery_size (int): Size of the periphery region.
+        total_connections (int): Total number of connections (edges) to generate in the graph.
+        intra_core_weight (float): Relative weight for connections within cores.
+        inter_core_weight (float): Relative weight for connections between different cores.
+        core_periphery_weight (float): Relative weight for connections between cores and periphery.
+        intra_periphery_weight (float): Relative weight for connections within periphery.
+        seed (int, optional): Random seed for reproducibility.
 
     Returns:
-        np.ndarray: 生成图的 NumPy 邻接矩阵。
+        np.ndarray: NumPy adjacency matrix of the generated graph.
     """
-    # 0. 初始化
+    # 0. Initialize
     rng = np.random.default_rng(seed)
     num_cores = len(core_sizes)
     total_nodes = sum(core_sizes) + periphery_size
-    # 1. 建立一个从节点ID到其所属块(block)的映射
-    # 例如，core_sizes=[10,5], periphery_size=8
-    # 节点0-9属于块0(核心1), 10-14属于块1(核心2), 15-22属于块2(边缘)
+    # 1. Create a mapping from node ID to its block
+    # For example, core_sizes=[10,5], periphery_size=8
+    # Nodes 0-9 belong to block 0 (core 1), 10-14 belong to block 1 (core 2), 15-22 belong to block 2 (periphery)
     node_to_block = np.zeros(total_nodes, dtype=int)
     start_idx = 0
     for i, size in enumerate(core_sizes):
         node_to_block[start_idx : start_idx + size] = i
         start_idx += size
     if periphery_size > 0:
-        node_to_block[start_idx:] = num_cores # 边缘区的块ID是最后一个
+        node_to_block[start_idx:] = num_cores # Periphery block ID is the last one
 
-    # 2. 生成所有可能的连接及其权重
+    # 2. Generate all possible connections and their weights
     possible_edges = []
     edge_weights = []
-    
-    # 遍历所有节点对 (i, j) 
+
+    # Iterate through all node pairs (i, j) 
     for i in range(total_nodes):
         for j in range(i, total_nodes):
             block_i = node_to_block[i]
             block_j = node_to_block[j]
             
             weight = 0.0
-            # 情况1: 两个节点在同一个块中
+            # Case 1: Two nodes in the same block
             if block_i == block_j:
-                if block_i < num_cores: # 核心内部
+                if block_i < num_cores: # Within core
                     weight = intra_core_weight
-                else: # 边缘内部
+                else: # Within periphery
                     weight = intra_periphery_weight
-            # 情况2: 两个节点在不同块中
+            # Case 2: Two nodes in different blocks
             else:
                 is_i_core = (block_i < num_cores)
                 is_j_core = (block_j < num_cores)
-                if is_i_core and is_j_core: # 两个不同核心之间
+                if is_i_core and is_j_core: # Between different cores
                     weight = inter_core_weight
-                else: # 核心与边缘之间
+                else: # Between core and periphery
                     weight = core_periphery_weight
             
             if weight > 0.0:
@@ -202,27 +202,27 @@ def generate_adj_matrix(
 
     if total_connections > len(possible_edges):
         raise ValueError(
-            f"请求的总连接数 {total_connections} 超过了基于当前权重所能创建的最大连接数 {len(possible_edges)}。"
+            f"Requested total connections {total_connections} exceeds the maximum number of connections {len(possible_edges)} that can be created based on current weights."
         )
 
-    # 3. 根据权重进行抽样
-    # 将权重转换为概率
+    # 3. Sample based on weights
+    # Convert weights to probabilities
     total_weight = sum(edge_weights)
     if total_weight == 0:
-        if total_connections > 0: raise ValueError("所有权重均为0，无法生成任何连接。")
+        if total_connections > 0: raise ValueError("All weights are 0, cannot generate any connections.")
         return np.zeros((total_nodes, total_nodes), dtype=int)
-        
+
     probabilities = np.array(edge_weights) / total_weight
-    
-    # 从所有可能的连接中，根据概率不重复地抽取 total_connections 个
+
+    # Sample total_connections from all possible connections without replacement based on probabilities
     chosen_indices = rng.choice(
         len(possible_edges), 
         size=total_connections, 
         replace=False, 
         p=probabilities
     )
-    
-    # 4. 构建邻接矩阵
+
+    # 4. Build adjacency matrix
     adj_matrix = np.zeros((total_nodes, total_nodes), dtype=int)
     for index in chosen_indices:
         u, v = possible_edges[index]
@@ -233,7 +233,7 @@ def generate_adj_matrix(
 
 def compute_syn_loglik(s_obs, s_sims, use_diag_cov=False, ridge=1e-6):
     """
-    计算合成似然，输入全是 Tensor (GPU/CPU 均可，建议 GPU)
+    Compute synthetic likelihood, all inputs are Tensors (GPU/CPU compatible, GPU recommended).
     s_obs: [d]
     s_sims: [n_sims, d]
     """
@@ -272,78 +272,78 @@ def compute_syn_loglik(s_obs, s_sims, use_diag_cov=False, ridge=1e-6):
 
 def compute_syn_loglik_with_pca(s_obs, s_sims, n_components=10, use_diag_cov=True):
     """
-    先对数据进行 PCA 降维，再计算合成似然。
-    
-    参数:
-        s_obs: [d] 观测统计量
-        s_sims: [n_sims, d] 模拟统计量
-        n_components: 保留的主成分数量 (推荐 8-12)
-        use_diag_cov: 降维后是否使用对角协方差 (PCA后特征理论上不相关，True 是合理的)
-        
-    注意:
-        由于特征量纲不同，PCA 前会自动进行 Z-score 标准化。
+    Perform PCA dimensionality reduction first, then compute synthetic likelihood.
+
+    Parameters:
+        s_obs: [d] Observed statistics
+        s_sims: [n_sims, d] Simulated statistics
+        n_components: Number of principal components to retain (recommended 8-12)
+        use_diag_cov: Whether to use diagonal covariance after dimensionality reduction (theoretically reasonable as PCA features are uncorrelated, True is appropriate)
+
+    Note:
+        Z-score standardization will be automatically performed before PCA due to different feature scales.
     """
-    # 1. 自动标准化 (Standardization)
-    # 使用模拟数据的均值和标准差来标准化观测数据，防止数据泄露
+    # 1. Automatic standardization
+    # Use mean and std from simulated data to standardize observed data to prevent data leakage
     mu = s_sims.mean(dim=0)
-    # 添加微小 epsilon 防止除以 0 (如果有特征在所有模拟中完全不变)
+    # Add small epsilon to prevent division by 0 (if a feature remains completely unchanged across all simulations)
     std = s_sims.std(dim=0, unbiased=True) + 1e-6 
     
     s_sims_norm = (s_sims - mu) / std
     s_obs_norm = (s_obs - mu) / std
-    
-    # 2. 执行 PCA (使用 SVD 方法)
-    # 对 s_sims_norm 进行 SVD 分解: X = U @ S @ Vh
-    # Vh 的行就是主成分方向 (Eigenvectors)
-    # full_matrices=False 确保我们得到紧凑形式
+
+    # 2. Perform PCA (using SVD method)
+    # Decompose s_sims_norm via SVD: X = U @ S @ Vh
+    # Rows of Vh are the principal component directions (Eigenvectors)
+    # full_matrices=False ensures we get the compact form
     try:
         U, S, Vh = torch.linalg.svd(s_sims_norm, full_matrices=False)
     except RuntimeError:
-        # 如果 SVD 不收敛 (极少见)，返回极小似然值
+        # If SVD does not converge (rare), return very small likelihood value
         return -1e9
 
-    # 3. 截断并投影
+    # 3. Truncate and project
     # Vh: [min(n_sims, d), d]
-    # 取前 n_components 个成分。注意 Vh 的形状，我们需要转置来进行投影
+    # Take the first n_components components. Note Vh's shape, we need to transpose for projection
     # components: [d, n_components]
-    components = Vh[:n_components, :].T 
-    
-    # 投影数据: [n_sims, d] @ [d, k] -> [n_sims, k]
+    components = Vh[:n_components, :].T
+
+    # Project data: [n_sims, d] @ [d, k] -> [n_sims, k]
     s_sims_pca = s_sims_norm @ components
     s_obs_pca = s_obs_norm @ components
-    
-    # 4. 在降维空间计算似然
-    # PCA 的特性保证了 s_sims_pca 的各列之间是线性不相关的 (协方差矩阵是对角的)
-    # 所以这里 use_diag_cov=True 不仅是近似，在理论上也是更准确的
+
+    # 4. Compute likelihood in reduced-dimensional space
+    # PCA property ensures that columns of s_sims_pca are linearly uncorrelated (covariance matrix is diagonal)
+    # So use_diag_cov=True here is not just an approximation, but theoretically more accurate
     return compute_syn_loglik(s_obs_pca, s_sims_pca, use_diag_cov=use_diag_cov)
 
 
 def check_pca_variance(s_sims):
     """
-    打印 PCA 各主成分的解释方差比，帮助决定 n_components
+    Print the explained variance ratio of each PCA principal component to help decide n_components.
     s_sims: [n_sims, d]
     """
-    # 1. 标准化
+    # 1. Standardization
     mu = s_sims.mean(dim=0)
     std = s_sims.std(dim=0, unbiased=True) + 1e-6
     s_sims_norm = (s_sims - mu) / std
-    
-    # 2. SVD 分解
+
+    # 2. SVD decomposition
     # U, S, Vh = torch.linalg.svd(s_sims_norm, full_matrices=False)
-    # 奇异值 S 的平方与特征值（方差）成正比
+    # The square of singular values S is proportional to eigenvalues (variance)
     _, S, _ = torch.linalg.svd(s_sims_norm, full_matrices=False)
-    
-    # 3. 计算方差解释比
+
+    # 3. Calculate explained variance ratio
     eigvals = S ** 2
     total_variance = torch.sum(eigvals)
     explained_variance_ratio = eigvals / total_variance
     cumulative_variance_ratio = torch.cumsum(explained_variance_ratio, dim=0)
-    
-    # 4. 打印结果
+
+    # 4. Print results
     print(f"{'Component':<10} | {'Variance Explained':<20} | {'Cumulative':<10}")
     print("-" * 45)
-    
-    # 转为 numpy 方便打印
+
+    # Convert to numpy for easier printing
     evr = explained_variance_ratio.cpu().numpy()
     cvr = cumulative_variance_ratio.cpu().numpy()
     

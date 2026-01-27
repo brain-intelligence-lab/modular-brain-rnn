@@ -1,10 +1,10 @@
 import torch
 import numpy as np
-import seaborn as sns  # 导入 seaborn
+import seaborn as sns  # Import seaborn
 from functions.utils.eval_utils import do_eval
 from datasets.multitask import rules_dict, Multitask_Batches_Realtime_Gen
-import matplotlib.pyplot as plt # 导入 matplotlib
-import pandas as pd # 导入 pandas 以便进行数据处理
+import matplotlib.pyplot as plt # Import matplotlib
+import pandas as pd # Import pandas for data processing
 import matplotlib.ticker as mticker
 import pickle
 import argparse
@@ -25,7 +25,7 @@ def start_parse():
 
 def get_data_loss(data_loader, model, device):
     loss_list = []
-    # 使用 torch.no_grad() 禁用梯度计算
+    # Use torch.no_grad() to disable gradient computation
     with torch.no_grad():
         for input_data, target, c_mask in data_loader:
             input_data = input_data.to(device)
@@ -42,16 +42,16 @@ def get_data_loss(data_loader, model, device):
 
 def run_perturbation_analysis_for_checkpoint(args, model_size, seed, alphas):
     """
-    对单个模型检查点在多个扰动水平(alphas)下进行分析。
-    
+    Perform perturbation analysis at multiple perturbation levels (alphas) for a single model checkpoint.
+
     Args:
-        model_size (int): 模型的隐藏单元数量。
-        seed (int): 随机种子。
-        alphas (list of float): 扰动强度列表。
-        
+        model_size (int): Number of hidden units in the model.
+        seed (int): Random seed.
+        alphas (list of float): List of perturbation intensity levels.
+
     Returns:
-        list of dict: 包含该检查点在不同扰动水平下结果的列表。
-                      如果模型文件不存在，则返回空列表。
+        list of dict: List containing results for this checkpoint at different perturbation levels.
+                      Returns empty list if model file does not exist.
     """
     train_loader = args.train_loader
     device = args.device
@@ -60,12 +60,12 @@ def run_perturbation_analysis_for_checkpoint(args, model_size, seed, alphas):
     task_num = 20
     file_name = f'{DIRECTORY_NAME}/n_rnn_{model_size}_task_{task_num}_seed_{seed}/RNN_interleaved_learning_{step}.pth'
 
-    # 1. 稳健性检查：确保模型文件存在
+    # 1. Robustness check: ensure model file exists
     if not os.path.exists(file_name):
         print(f"Warning: File not found, skipping. {file_name}")
         return []
 
-    # 2. 加载模型并评估原始性能（效率优化：仅执行一次）
+    # 2. Load model and evaluate original performance (efficiency optimization: execute only once)
     try:
         model = torch.load(file_name, map_location=device)
         model.to(device)
@@ -78,54 +78,54 @@ def run_perturbation_analysis_for_checkpoint(args, model_size, seed, alphas):
     # log = do_eval(model, rule_train=rules_dict['all'], verbose=False)
     # original_perf = log['perf_avg'][-1]
 
-    # 3. 对每个alpha水平进行扰动分析
+    # 3. Perform perturbation analysis for each alpha level
     results_for_checkpoint = []
     with torch.no_grad():
         for alpha in alphas:
-            # 施加扰动
+            # Apply perturbation
  
             for _ in range(10):
 
-                # 计算信号功率 (能量)
-                # 功率定义为信号平方和的均值，但在这里用总能量（平方和）更方便，因为比例是相同的
+                # Calculate signal power (energy)
+                # Power is defined as mean of squared signal, but using total energy (sum of squares) is more convenient here as the ratio is the same
                 signal_power = torch.sum(original_W_rec ** 2)
 
-                # 将SNR从dB转换为线性比率
+                # Convert SNR from dB to linear scale
                 # SNR(linear) = 10^(SNR(dB) / 10)
                 snr_linear = 10 ** (alpha / 10.0)
 
-                # 根据SNR计算所需的噪声功率
+                # Calculate required noise power based on SNR
                 #    SNR = Power_signal / Power_noise  =>  Power_noise = Power_signal / SNR
                 noise_power = signal_power / snr_linear
 
-                # 生成一个随机噪声，其形状与权重相同
+                # Generate random noise with the same shape as weights
                 noise = torch.randn_like(original_W_rec)
 
-                # 计算当前生成的这个随机噪声的功率
+                # Calculate the power of the currently generated random noise
                 current_noise_power = torch.sum(noise ** 2)
                 
-                # 计算缩放因子，使噪声达到所需的功率
+                # Calculate scaling factor to bring noise to desired power
                 #    Power(k*N) = k^2 * Power(N) = desired_power
                 #    => k = sqrt(desired_power / current_power)
                 scaling_factor = torch.sqrt(noise_power / current_noise_power)
 
-                # 缩放噪声并添加到原始权重上
+                # Scale noise and add to original weights
                 noise = scaling_factor * noise
 
-                # print(f"  - 信号能量: {signal_power:.4f}")
-                # print(f"  - 目标噪声能量: {noise_power:.4f}")
-                # print(f"  - 实际注入噪声能量: {torch.sum(noise**2):.4f}")
+                # print(f"  - Signal energy: {signal_power:.4f}")
+                # print(f"  - Target noise energy: {noise_power:.4f}")
+                # print(f"  - Actual injected noise energy: {torch.sum(noise**2):.4f}")
                 # final_snr = 10 * torch.log10(signal_power / torch.sum(noise**2))
-                # print(f"  - 最终的信噪比 (dB): {final_snr:.2f}")
+                # print(f"  - Final SNR (dB): {final_snr:.2f}")
 
                 model.recurrent_conn.weight.data = original_W_rec + noise
                 perturbed_loss = get_data_loss(train_loader, model, device)
                 delta_loss = perturbed_loss - pre_loss
                 
-                # 记录结果
+                # Record results
                 results_for_checkpoint.append({
                     'model_size': model_size,
-                    'seed': seed+_,  # 添加 seed 记录
+                    'seed': seed+_,  # Add seed record
                     'step': step,
                     'snr': snr_linear,
                     'delta_loss': delta_loss
@@ -136,21 +136,21 @@ def run_perturbation_analysis_for_checkpoint(args, model_size, seed, alphas):
 
 def main(args):
     """
-    主函数，用于执行整个实验、数据收集和绘图。
+    Main function for executing the entire experiment, data collection, and plotting.
     """
     step = args.step
 
-    # --- 实验参数 ---
+    # --- Experiment Parameters ---
     MODEL_SIZES = [8, 16, 32, 64]
     SEEDS = [i for i in range(100, 2100, 100)]
     # ALPHAS = [1 * i for i in range(1, 7)]
     ALPHAS = [1, 2, 4, 6, 8, 10]
 
-    # --- 定义序列化文件名 ---
+    # --- Define serialization filename ---
     results_filename = f'./runs/all_results_step_{step}.pkl'
 
-    # --- 数据收集 ---
-    # 判断是否有序列化文件，如果有则直接读取，否则进行计算
+    # --- Data Collection ---
+    # Check if serialization file exists, if yes load directly, otherwise perform computation
     if os.path.exists(results_filename):
         print(f"Found serialized results file '{results_filename}'. Loading data...")
         with open(results_filename, 'rb') as f:
@@ -162,8 +162,8 @@ def main(args):
         for model_size, seed, step in tqdm(param_combinations, desc="Running Perturbation Analysis"):
             results = run_perturbation_analysis_for_checkpoint(args, model_size, seed, ALPHAS)
             all_results.extend(results)
-        
-        # --- 序列化计算结果 ---
+
+        # --- Serialize computation results ---
         with open(results_filename, 'wb') as f:
             pickle.dump(all_results, f)
         print(f"Computation finished and results saved to '{results_filename}'.")
@@ -171,42 +171,42 @@ def main(args):
 
     df = pd.DataFrame(all_results).round(2)
 
-    # --- 数据可视化 --- #
+    # --- Data Visualization --- #
     print(f"--- Generating plot for training step {step} ---")
-    
-    # 1. 筛选出当前 step 的数据
+
+    # 1. Filter data for current step
     df_step = df[df['step'] == step]
-    
-    # 2. 创建新的图像
+
+    # 2. Create new figure
     plt.figure(figsize=(1.8, 1.8))
-    
-    # 定义异常点样式：调整大小和透明度
+
+    # Define outlier style: adjust size and transparency
     flierprops = dict(marker='o', markersize=1.2, alpha=0.8, markeredgecolor='green')
 
 
-    # 3. 使用 seaborn 绘制箱形图
-    sns.boxplot(x='snr', y='delta_loss', hue='model_size', flierprops=flierprops, 
+    # 3. Use seaborn to draw boxplot
+    sns.boxplot(x='snr', y='delta_loss', hue='model_size', flierprops=flierprops,
                 data=df_step, palette='viridis', linewidth=0.25)
 
     ax = plt.gca()
     for spine in ax.spines.values():
-        spine.set_linewidth(0.5)  # 设置所有框线宽度
+        spine.set_linewidth(0.5)  # Set all frame line widths
 
-    # 4. 设置特定于该 step 的标题和标签
+    # 4. Set step-specific title and labels
     ax.tick_params(axis='both', which='major', labelsize=5, width=0.5)
     plt.title(f'Perturbation for Training Step {step}', fontsize=6)
     plt.xlabel('Signal Noise Ratio', fontsize=6)
     plt.ylabel('Change in Loss (Δ Loss)',fontsize=6)
     plt.grid(axis='y', linestyle='--', linewidth=0.25)
     plt.legend(title='Model Size', loc='upper right', fontsize=5, title_fontsize=5)
-    
+
     plt.tight_layout()
-    # 5. 保存带有 step 信息的独立图像文件
+    # 5. Save independent image file with step information
     output_filename = f'perturbation_analysis_boxplot_step_{step}.png'
     plt.savefig(output_filename, dpi=300)
 
     output_filename = f'perturbation_analysis_boxplot_step_{step}.svg'
-    
+
     plt.savefig(output_filename, dpi=300)
     print(f"Plot saved as '{output_filename}'")
     plt.close()
@@ -214,7 +214,7 @@ def main(args):
 if __name__ == '__main__':
     args = start_parse()
 
-    # --- 全局参数设定 ---
+    # --- Global Parameter Settings ---
     DIRECTORY_NAME = args.load_model_path 
     device = torch.device(f'cuda:{args.gpu}' if args.gpu>=0 else 'cpu')
     args.device = device

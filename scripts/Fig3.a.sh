@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 定义一个函数来处理信号
+# Define a function to handle signals
 cleanup() {
     echo "Caught SIGINT signal. Cleaning up..."
-    kill $(jobs -p)  # 杀死所有子进程
+    kill $(jobs -p)  # Kill all child processes
     exit
 }
 
-# 捕获SIGINT信号
+# Capture SIGINT signal
 trap 'cleanup' SIGINT
 
 gpus=(0 1 2 3 4 5 6 7)
@@ -35,9 +35,9 @@ for seed in "${seeds[@]}"; do
             safe_task_name="${task_name// /_}"
             log_dir="./runs/Fig3a_go/n_rnn_${n_rnn}_task_${safe_task_name}_seed_${seed}"
             echo "Launching task_name $safe_task_name on GPU $gpu with seed $seed"
-            # 确保日志目录存在
+            # Ensure log directory exists
             mkdir -p $log_dir
-            # 启动训练进程
+            # Start training process
             python main.py \
                 --n_rnn $n_rnn \
                 --rec_scale_factor 0.1 \
@@ -54,7 +54,7 @@ for seed in "${seeds[@]}"; do
         done
     done
     
-    wait  # 等待所有后台任务完成
+    wait  # Wait for all background tasks to complete
     echo "All jobs for n_rnn=$n_rnn with seed=$seed completed at $(date)"
 done
 
@@ -75,9 +75,9 @@ for seed in "${seeds[@]}"; do
             safe_task_name="${task_name// /_}"
             log_dir="./runs/Fig3a_contextdelaydm_easy_task/n_rnn_${n_rnn}_task_${safe_task_name}_seed_${seed}"
             echo "Launching task_name $safe_task_name on GPU $gpu with seed $seed"
-            # 确保日志目录存在
+            # Ensure log directory exists
             mkdir -p $log_dir
-            # 启动训练进程
+            # Start training process
             python main.py \
                 --n_rnn $n_rnn \
                 --rec_scale_factor 0.1 \
@@ -96,7 +96,7 @@ for seed in "${seeds[@]}"; do
     done
 
     if (( seed % 100 == 0 )); then
-        wait  # 等待所有后台任务完成
+        wait  # Wait for all background tasks to complete
         echo "All jobs for n_rnn=$n_rnn with seed<=$seed started at $(date)"
     fi
 done

@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 定义一个函数来处理信号
+# Define a function to handle signals
 cleanup() {
     echo "Caught SIGINT signal. Cleaning up..."
-    kill $(jobs -p)  # 杀死所有子进程
+    kill $(jobs -p)  # Kill all child processes
     exit
 }
 
-# 捕获SIGINT信号
+# Capture SIGINT signal
 trap 'cleanup' SIGINT
 
 hc_s=(8 16 32 64)
@@ -35,9 +35,9 @@ for c1 in "${hc_s[@]}"; do
             gpu=${gpus[$index]}
             logdir="./runs/cnn_models_data/c1_${c1}_c2_${c1}_class_num_${class_num}_seed_${seed}"
             echo "Launching channels1 $c1 channels2 $c1 class_num $class_num on GPU $gpu with seed $seed"
-            # 确保日志目录存在
+            # Ensure log directory exists
             mkdir -p $logdir
-            # 启动训练进程
+            # Start training process
             python cnn_models_exp.py \
                 --channels_1 $c1 \
                 --channels_2 $c1 \
@@ -52,7 +52,7 @@ for c1 in "${hc_s[@]}"; do
             let index%=num_of_gpus
         done
     done
-    wait  # 等待所有后台任务完成
+    wait  # Wait for all background tasks to complete
     echo "All jobs for hidden_channel $h_c output_channel $o_c completed at $(date)"
 
 done
@@ -69,9 +69,9 @@ for hidden_channel in "${hc_s[@]}"; do
             gpu=${gpus[$index]}
             logdir="./runs/gnn_models_data/hidden_channels_${hidden_channel}_task_idx_${task_idx}_seed_${seed}"
             echo "Launching hidden_channels $hidden_channel  task_idx $task_idx on GPU $gpu with seed $seed"
-            # 确保日志目录存在
+            # Ensure log directory exists
             mkdir -p $logdir
-            # 启动训练进程
+            # Start training process
             python gnn_models_exp.py \
                 --hidden_channels $hidden_channel \
                 --gpu $gpu \
@@ -87,7 +87,7 @@ for hidden_channel in "${hc_s[@]}"; do
 
     done
 
-    wait  # 等待所有后台任务完成
+    wait  # Wait for all background tasks to complete
     echo "All jobs for hidden_channel=$hidden_channel started at $(date)"
 
 done

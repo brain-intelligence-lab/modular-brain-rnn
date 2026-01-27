@@ -25,23 +25,23 @@ def ks_statistic(x1, x2):
 
 
 def ks_statistic_gpu(x1, x2, device):
-    # x1, x2均是一维向量
-    # 将 x1 和 x2 转换为 PyTorch 张量并移至 GPU
+    # x1, x2 are both 1D vectors
+    # Convert x1 and x2 to PyTorch tensors and move to GPU
     x1 = torch.tensor(x1, device=device)
     x2 = torch.tensor(x2, device=device)
 
-    # 排序x1和x2
+    # Sort x1 and x2
     sorted_x1, _ = torch.sort(x1)
     sorted_x2, _ = torch.sort(x2)
     
-    # 获取所有唯一的值
+    # Get all unique values
     unique_values = torch.unique(torch.cat((sorted_x1, sorted_x2)))
     
-    # 计算每个数组在这些点的CDF
+    # Calculate CDF of each array at these points
     cdf_x1 = torch.searchsorted(sorted_x1, unique_values, right=True) / x1.size(0)
     cdf_x2 = torch.searchsorted(sorted_x2, unique_values, right=True) / x2.size(0)
     
-    # 计算CDF之间的最大差异
+    # Calculate maximum difference between CDFs
     max_diff = torch.max(torch.abs(cdf_x1 - cdf_x2))
     
     return max_diff.item()
@@ -50,16 +50,16 @@ def ks_statistic_gpu(x1, x2, device):
 
 def ks_statistic_batch_gpu(x1, x2, device):
     """
-    KS 统计量的 Batch 并行版本 (GPU)
+    Batch parallel version of KS statistic (GPU)
     
-    参数:
-    x1: Tensor, 形状 (B, N) 或者list
-    x2: Tensor, 形状 (B, M)
+    Args:
+    x1: Tensor, shape (B, N) or list
+    x2: Tensor, shape (B, M)
     
-    返回:
-    max_diff: Tensor, 形状 (B,) 每个样本的 KS 统计量
+    Returns:
+    max_diff: Tensor, shape (B,) KS statistic for each sample
     """
-    # 确保在同一设备上
+    # Ensure on the same device
     if isinstance(x1, list) or isinstance(x2, list):
         if isinstance(x2, list):
             x1, x2 = x2, x1
@@ -76,25 +76,25 @@ def ks_statistic_batch_gpu(x1, x2, device):
     B, N = x1.shape
     _, M = x2.shape
 
-    # 1. 对 x1 和 x2 分别进行行内排序
+    # 1. Sort x1 and x2 in each row
     sorted_x1, _ = torch.sort(x1, dim=-1)
     sorted_x2, _ = torch.sort(x2, dim=-1)
 
-    # 2. 构造评估点 (Concatenate x1 and x2)
-    # 在计算 KS 时，最大差异一定发生在 x1 或 x2 的样本点上
-    # 形状为 (B, N + M)
+    # 2. Construct evaluation points (Concatenate x1 and x2)
+    # When calculating KS, maximum difference must occur at sample points of x1 or x2
+    # Shape is (B, N + M)
     combined = torch.cat([sorted_x1, sorted_x2], dim=-1)
-    # 这里的排序是为了配合 searchsorted 使用，形状 (B, N + M)
+    # Sorting here is to work with searchsorted, shape (B, N + M)
     evaluation_points, _ = torch.sort(combined, dim=-1)
 
-    # 3. 计算 Batch CDF
-    # searchsorted 支持 batch 模式: 
+    # 3. Calculate Batch CDF
+    # searchsorted supports batch mode: 
     # sorted_sequence (B, N), input (B, N+M) -> output (B, N+M)
     cdf_x1 = torch.searchsorted(sorted_x1, evaluation_points, right=True).float() / N
     cdf_x2 = torch.searchsorted(sorted_x2, evaluation_points, right=True).float() / M
 
-    # 4. 计算最大绝对差异
-    # 在 dim=-1 (N+M 维度) 上取最大值
+    # 4. Calculate maximum absolute difference
+    # Take maximum on dim=-1 (N+M dimension)
     max_diff = torch.max(torch.abs(cdf_x1 - cdf_x2), dim=-1)[0]
 
     return max_diff
@@ -105,16 +105,16 @@ def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, 
     if use_matching:
         Kseed, _, _ = bct_gpu.matching_ind_gpu(A, device=device)
         # Kseed, _, _ = bct.matching_ind(A)
-        Kseed = Kseed + epsilon  # add the epsilon
+        Kseed = Kseed + epsilon  # Add the epsilon
 
-    n = len(A)  # take the nnode
-    mv1 = modelvar[0]  # take if power law or exponential
+    n = len(A)  # Take the number of nodes
+    mv1 = modelvar[0]  # Take whether power law or exponential
     mv2 = modelvar[1]
 
     Fd = np.ones_like(A) / A.size
     Fk = np.ones_like(A) / A.size
 
-    # compute the parameterized costs and values for wiring
+    # Compute parameterized costs and values for wiring
     if D is not None:
         if mv1 == 'powerlaw':
             Fd = (D + epsilon )**eta
@@ -127,19 +127,19 @@ def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, 
             Fk = np.exp(gam * Kseed)
     
     # compute the initial wiring probability
-    Ff = Fd * Fk * ~A.astype(bool)  # for non-extant edges
+    Ff = Fd * Fk * ~A.astype(bool)  # For non-existent edges
     if Fc is not None:
         Ff = Ff * (Fc + epsilon)
     
     if undirected:
-        u_indx, v_indx = np.where(np.triu(np.ones((n, n)), k=1))  # compute indices
+        u_indx, v_indx = np.where(np.triu(np.ones((n, n)), k=1))  # Compute indices
     else:
-        u_indx, v_indx = np.where(np.ones((n, n)))  # compute indices
+        u_indx, v_indx = np.where(np.ones((n, n)))  # Compute indices
     
     indx = u_indx  * n + v_indx
     P = Ff.flatten()[indx]  # get the probability vector
 
-    # add connection
+    # Add connection
     C = np.concatenate([np.array([0]), np.cumsum(P)])
     rand_value = np.random.rand()
     r = np.sum(rand_value * C[-1] >= C) - 1
@@ -157,17 +157,17 @@ def Gen_one_connection(A, params, modelvar, device, D=None, use_matching=False, 
 def Sample_conn_matrix(prob_matrix, tot_conn_num, directed=False):
     n = prob_matrix.shape[0]
     if directed:
-        # 提取非对角线部分的索引
+        # Extract off-diagonal indices
         u_indx, v_indx = np.where(~np.eye(n, dtype=bool))
     else:
-        # 提取上三角部分的索引 (不包含自环 k=1，若包含自环则 k=0)
+        # Extract upper triangular indices (excluding self-loops k=1, use k=0 to include self-loops)
         u_indx, v_indx = np.triu_indices(n, k=1)
     
-    # 获取索引对应的概率并归一化
+    # Get probabilities corresponding to indices and normalize
     probs = prob_matrix[u_indx, v_indx]
-    probs /= probs.sum() # 重新归一化，确保概率和为 1
+    probs /= probs.sum() # Renormalize to ensure probability sums to 1
     
-    # 这里的 choice 选出的是 u_indx 数组中的下标
+    # The choice here selects indices from the u_indx array
     if directed: 
         sampled_indices = np.random.choice(len(u_indx), \
             size=tot_conn_num, replace=False, p=probs)
@@ -175,15 +175,15 @@ def Sample_conn_matrix(prob_matrix, tot_conn_num, directed=False):
         sampled_indices = np.random.choice(len(u_indx), \
             size=int(tot_conn_num//2), replace=False, p=probs)
     
-    # 映射回原矩阵坐标
+    # Map back to original matrix coordinates
     final_u = u_indx[sampled_indices]
     final_v = v_indx[sampled_indices]
     
-    # 构建结果矩阵
+    # Build result matrix
     result_matrix = np.zeros((n, n), dtype=int)
     result_matrix[final_u, final_v] = 1
     if not directed:
-        result_matrix[final_v, final_u] = 1 # 无向图保证对称性
+        result_matrix[final_v, final_u] = 1 # Ensure symmetry for undirected graphs
         
     assert result_matrix.sum() == tot_conn_num
     return result_matrix
@@ -198,95 +198,95 @@ def gnm(Distance, Kseed, eta, gamma, tot_conn_num, directed=False):
 
 def gnm_batched(prob_matrix_batch, tot_conn_num, directed=False, device='cuda:0'):
     """
-    高度优化的 GNM 批量采样器：
-    1. 全程 GPU 计算，无 CPU 传输。
-    2. 支持超大规模 Batch 采样 (一次生成 batch_size 个图，batch_size = eta_vec * gamma_vec * n_sims)。
-    3. 使用 torch.multinomial 替代极其缓慢的 np.random.choice。
+    Highly optimized GNM batch sampler:
+    # 1. Full GPU computation, no CPU transfer.
+    # 2. Support ultra-large batch sampling (generate batch_size graphs at once, batch_size = eta_vec * gamma_vec * n_sims)。
+    # 3. Use torch.multinomial instead of extremely slow np.random.choice.
+        
+    Args:
+        prob_matrix_batch: [batch_size, n, n] probability matrix tensor, already on device
+        tot_conn_num: Total number of connections per graph
+        directed: Whether graph is directed
+        device: Device ('cuda:0' etc.)
     
-    参数:
-        prob_matrix_batch: [batch_size, n, n] 的概率矩阵 tensor，已经在 device 上
-        tot_conn_num: 每个图的总连接数
-        directed: 是否为有向图
-        device: 设备 ('cuda:0' 等)
-    
-    返回:
-        adj_matrices: [batch_size, n, n] 的邻接矩阵 tensor
+    Returns:
+        adj_matrices: [batch_size, n, n] adjacency matrix tensor
     """
     
-    # 1. 确保输入是 Tensor 且在正确的设备上
+    # 1. Ensure input is Tensor and on correct device
     prob_matrix_batch = torch.as_tensor(prob_matrix_batch, device=device, dtype=torch.float32)
     batch_size, n, _ = prob_matrix_batch.shape
     
-    # 2. 提取有效连接的概率 (Masking)
+    # 2. Extract probabilities of valid connections (Masking)
     if directed:
-        # 移除对角线 - 使用与重建索引相同的方法
+        # Remove diagonal - use same method as reconstruction index
         mask = ~torch.eye(n, dtype=torch.bool, device=device)  # [n, n]
-        u_all, v_all = torch.where(mask)  # 获取非对角线元素的坐标
-        # 对每个 batch 提取有效概率: [batch_size, n*(n-1)]
+        u_all, v_all = torch.where(mask)  # Get coordinates of off-diagonal elements
+        # Extract valid probabilities for each batch: [batch_size, n*(n-1)]
         valid_probs = prob_matrix_batch[:, u_all, v_all]  # [batch_size, n*(n-1)]
         num_edges_to_sample = tot_conn_num
     else:
-        # 仅取上三角 (k=1)
+        # Only take upper triangular (k=1)
         u_idx, v_idx = torch.triu_indices(n, n, offset=1, device=device)
-        # 对每个 batch 提取上三角: [batch_size, n*(n-1)/2]
+        # Extract upper triangular for each batch: [batch_size, n*(n-1)/2]
         valid_probs = prob_matrix_batch[:, u_idx, v_idx]  # [batch_size, n*(n-1)/2]
         num_edges_to_sample = int(tot_conn_num // 2)
 
-    # 3. 归一化 (对每个 batch 分别归一化)
-    # [batch_size, num_candidates] -> 对 dim=1 归一化
+    # 3. Normalize (normalize for each batch separately)
+    # [batch_size, num_candidates] -> Normalize on dim=1
     valid_probs = valid_probs / valid_probs.sum(dim=1, keepdim=True)
 
-    # 4. 批量采样 (核心加速点)
-    # torch.multinomial 在 GPU 上对加权无放回采样极快
+    # 4. Batch sampling (core acceleration point)
+    # torch.multinomial is extremely fast for weighted sampling without replacement on GPU
     # sampled_indices shape: [batch_size, num_edges_to_sample]
     sampled_flat_indices = torch.multinomial(valid_probs, num_edges_to_sample, replacement=False)
 
-    # 5. 重建邻接矩阵
-    # 创建全 0 容器: [batch_size, n, n]
+    # 5. Reconstruct adjacency matrix
+    # Create all-zero container: [batch_size, n, n]
     adj_matrices = torch.zeros((batch_size, n, n), dtype=torch.int8, device=device)
 
     if directed:
-        # 映射回二维坐标
-        # 使用与提取 valid_probs 时相同的索引方法
+        # Map back to 2D coordinates
+        # Use same indexing method as when extracting valid_probs
         mask = ~torch.eye(n, dtype=torch.bool, device=device)  # [n, n]
-        u_all, v_all = torch.where(mask)  # 获取非对角线元素的坐标
+        u_all, v_all = torch.where(mask)  # Get coordinates of off-diagonal elements
         valid_linear_indices = (u_all * n + v_all).long()  # [n*(n-1)]
         
-        # 获取采样到的真实线性索引
-        # sampled_flat_indices 是 [batch_size, num_edges] 的 long tensor
+        # Get actual linear indices sampled
+        # sampled_flat_indices is [batch_size, num_edges] long tensor
         # valid_linear_indices[sampled_flat_indices] -> shape [batch_size, num_edges]
         real_flat_indices = valid_linear_indices[sampled_flat_indices]  # [batch_size, num_edges]
         
-        # 填入 1，scatter_ 需要 long 类型的索引
+        # Fill with 1, scatter_ requires long type indices
         flat_adj = torch.zeros((batch_size, n * n), dtype=torch.int8, device=device)
         flat_adj.scatter_(1, real_flat_indices, 1)
         adj_matrices = flat_adj.view(batch_size, n, n)
         
     else:
-        # 无向图处理
-        # 1. 准备线性索引
-        # u_idx, v_idx 已经是上三角坐标
-        # 将二维坐标转为线性坐标: idx = u * n + v
-        # 确保数据类型为 long
+        # Undirected graph processing
+        # 1. Prepare linear indices
+        # u_idx, v_idx are already upper triangular coordinates
+        # Convert 2D coordinates to linear coordinates: idx = u * n + v
+        # Ensure data type is long
         flat_indices_map = (u_idx * n + v_idx).long()  # [num_candidates]
         
-        # 2. 获取 batch 中选中的真实线性索引
+        # 2. Get actual linear indices selected in batch
         batch_real_indices = flat_indices_map[sampled_flat_indices]  # [batch_size, num_edges]
 
-        # 3. 填入上三角
+        # 3. Fill upper triangular
         flat_adj = torch.zeros((batch_size, n * n), dtype=torch.int8, device=device)
         flat_adj.scatter_(1, batch_real_indices.long(), 1)
         adj_upper = flat_adj.view(batch_size, n, n)
         
-        # 4. 对称化: A + A.T
+        # 4. Symmetrize: A + A.T
         adj_matrices = adj_upper + adj_upper.transpose(1, 2)
 
-    return adj_matrices.float()  # 返回 float 以便后续计算统计量
+    return adj_matrices.float()  # Return float for subsequent statistic computation
 
 
 def get_graph_distribution(conn_matrix, Distance, device, to_tensor=False):
     """
-    计算单个图的分布统计量（保持向后兼容）
+    Calculate distribution statistics for a single graph (maintain backward compatibility)
     """
     target = []
 
@@ -304,26 +304,26 @@ def get_graph_distribution(conn_matrix, Distance, device, to_tensor=False):
 
 def get_graph_distribution_batched(conn_matrix_batch, Distance, device, directed=False):
     """
-    批量计算图的分布统计量
+    Batch compute distribution statistics of graphs
     
-    参数:
-        conn_matrix_batch: [batch_size, n, n] 的邻接矩阵 tensor，已经在 device 上
-        Distance: [n, n] 的距离矩阵（numpy array 或 tensor）
-        device: 设备
-        to_tensor: 是否返回 tensor（默认 True）
-        directed: 是否为有向图（默认 False）
+    Args:
+        conn_matrix_batch: [batch_size, n, n] adjacency matrix tensor, already on device
+        Distance: [n, n] distance matrix (numpy array or tensor)
+        device: Device
+        to_tensor: Whether to return tensor (default True)
+        directed: Whether graph is directed (default False)
     
-    返回:
+    Returns:
         target: list of tensors
             - degrees: [batch_size, n]
             - clustering: [batch_size, n]
             - betweenness: [batch_size, n]
-            - edge_lengths: list of arrays/tensors，每个元素是 [num_edges_i] 的数组
+            - edge_lengths: list of arrays/tensors, each element is [num_edges_i] array
     """
     conn_matrix_batch = torch.as_tensor(conn_matrix_batch, dtype=torch.float32, device=device)
     Distance = torch.as_tensor(Distance, dtype=torch.float32, device=device)
     
-    # 所有函数都先返回 tensor，最后统一处理
+    # All functions return tensor first, then process uniformly
     degrees = bct_gpu.degrees_und_batched(conn_matrix_batch, device)
     clustering = bct_gpu.clustering_coef_bu_gpu_batched(conn_matrix_batch, device)
     betweenness = bct_gpu.betweenness_bin_gpu_batched(conn_matrix_batch, device)
@@ -354,7 +354,7 @@ if __name__ == '__main__':
     
     import time
 
-    # 记录函数开始时间
+    # Record function start time
     start_time = time.time()
 
     for _ in range(10000):
@@ -366,14 +366,14 @@ if __name__ == '__main__':
         # value_1 = ks_statistic(x1, x2)
 
 
-    # 记录函数开始时间
+    # Record function start time
     end_time  = time.time()
     execution_time = end_time - start_time
 
-    print(f"函数运行时间: {execution_time} 秒")
+    print(f"Function execution time: {execution_time} seconds")
 
 
-    # 记录函数开始时间
+    # Record function start time
     start_time = time.time()
 
     for _ in range(10000):
@@ -385,8 +385,8 @@ if __name__ == '__main__':
         value_1 = ks_statistic(x1, x2)
 
 
-    # 记录函数开始时间
+    # Record function start time
     end_time  = time.time()
     execution_time = end_time - start_time
 
-    print(f"函数运行时间: {execution_time} 秒")
+    print(f"Function execution time: {execution_time} seconds")

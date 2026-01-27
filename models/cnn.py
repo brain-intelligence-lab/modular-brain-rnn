@@ -5,7 +5,7 @@ import torch.nn as nn
 class SiameseNet(nn.Module):
     def __init__(self, input_channels=3, channels_1=32, channels_2=32, output_channels=64):
         super(SiameseNet, self).__init__()
-        # 主干网络，用于提取特征
+        # Backbone network for feature extraction
         self.conv1 = nn.Conv2d(input_channels, channels_1, kernel_size=3, padding=1) # hidden_channels x 32 x 32
         self.relu1 = nn.ReLU()
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)  # hidden_channels x 16 x 16
@@ -30,12 +30,12 @@ class SiameseNet(nn.Module):
                 sum_before_scaling = target_layer.weight.data.abs().sum().item()
                 target_layer.weight.data *= scale_factor
                 sum_after_scaling = dict(self.named_modules())[layer].weight.data.abs().sum().item()
-                assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "缩放后的权重和不符合预期！"
-                print(f"已将层 '{layer}' 的权重乘以缩放)")
+                assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "Scaled weight sum does not meet expectations!"
+                print(f"Multiplied weights of layer '{layer}' by scale factor")
         
 
     def forward_one(self, x):
-        """通过主干网络处理单张图片"""
+        """Process a single image through backbone network"""
         x = self.pool1(self.relu1(self.conv1(x)))
         x = self.pool2(self.relu2(self.conv2(x)))
         x = self.flatten(x)
@@ -47,7 +47,7 @@ class SiameseNet(nn.Module):
         return out
 
     def forward(self, x1, x2):
-        """处理一对图片"""
+        """Process a pair of images"""
         out1 = self.forward_one(x1)
         out2 = self.forward_one(x2)
         return out1, out2

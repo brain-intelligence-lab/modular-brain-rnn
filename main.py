@@ -287,23 +287,23 @@ def module_lottery_ticket_hypo(args, writer):
             tmp_mask = np.zeros((n_rnn, n_rnn), dtype=np.float32)
             for i in range(n_rnn):
                 for j in range(n_rnn):
-                    if ci[i] == ci[j]: 
+                    if ci[i] == ci[j]:
                         tmp_mask[i, j] = 1.0
-                    
-            # 针对 tmp_mask = 1 的部分，取前 100%
+
+            # For tmp_mask = 1 part, take top 100%
             mask_1_indices = np.where(tmp_mask == 1)
             mask_1_values = abs_weight[mask_1_indices]
             num_elements_1 = int(np.ceil(mask_1_values.size))
             top_1_indices_sorted = np.argpartition(-mask_1_values, num_elements_1 - 1)[:num_elements_1]
 
-            # 针对 tmp_mask = 0 的部分，取前 5%
+            # For tmp_mask = 0 part, take top 5%
             mask_0_indices = np.where(tmp_mask == 0)
             mask_0_values = abs_weight[mask_0_indices]
             num_elements_0 = int(np.ceil(0.05 * mask_0_values.size))
             top_0_indices_sorted = np.argpartition(-mask_0_values, num_elements_0 - 1)[:num_elements_0]
 
             mask = np.zeros((n_rnn, n_rnn), dtype=bool)
-            # 合并两部分的索引到 mask 中
+            # Merge indices of two parts into mask
             for idx in top_1_indices_sorted:
                 mask[mask_1_indices[0][idx], mask_1_indices[1][idx]] = True
             for idx in top_0_indices_sorted:

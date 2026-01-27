@@ -85,15 +85,15 @@ if __name__ == '__main__':
             modularity_ste = modularity_std / np.sqrt(modularity_seed_array.shape[0])
             
             print(f'n_rnn:{model_size}, avg_perf:{perf_avg_mean.mean():.4f}, avg_moduarlity:{modularity_mean.mean():.4f}')
-            
 
-            # 生成要显示的标签位置
+
+            # Generate label positions to display
             x_ticks = [i for i in range(20, perf_avg_seed_array.shape[1]+1, 20)]
             # x_ticks = [0] + x_ticks
             x_tick_labels = [500*i for i in x_ticks]
 
-    
-            axs.axhline(y=0.95, color='green', linestyle='--', linewidth=0.25)  # 添加虚线
+
+            axs.axhline(y=0.95, color='green', linestyle='--', linewidth=0.25)  # Add dashed line
 
             y_ticks, y_labels = plt.yticks()
 
@@ -101,9 +101,9 @@ if __name__ == '__main__':
             axs.set_yticks(new_y_ticks + [0.95])
             axs.set_ylim(0, 1.0)
             # axes[m_idx].set_yticks(list(axes[m_idx].get_yticks()) + [0.95])
-            
-            # 绘制perf的均值和标准误
-            
+
+            # Draw mean and standard error of perf
+
             axs.set_xticklabels(x_tick_labels, rotation=45)
             axs.set_xticks(x_ticks)
             axs.set_xlim(0, 90)
@@ -130,8 +130,8 @@ if __name__ == '__main__':
         axs.set_xlabel('Iterations', fontsize=5, labelpad=1)
         axs.set_ylabel('Avg performance', fontsize=5, labelpad=1)
         axs.legend(loc='lower right', bbox_to_anchor=(1.02, 0.02), frameon=False, fontsize=5)
-        
-        # 调整布局
+
+        # Adjust layout
         plt.tight_layout()
 
         plt.savefig(f"./figures/Fig3/Fig3a/Fig3a_case{args.case}_{m_idx}.svg", format='svg')

@@ -14,13 +14,13 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 def plot_fig2a(model_size_list, color_dict=None):
     directory_name = "./runs/Fig2a_data_RNN_relu"
     seed_list = [i for i in range(100, 2100, 100)]
-    # 确保任务名称与您的文件系统/数据加载器中的名称完全匹配
+    # Ensure task names exactly match those in your filesystem/data loader
     task_name_list = ['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti',
                       'dm1', 'dm2', 'contextdm1', 'contextdm2', 'multidm',
                       'delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm',
                       'dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
 
-    # 1. 根据 Yang et al. (2019) Nature Neuroscience 的定义对任务进行分类
+    # 1. Classify tasks according to Yang et al. (2019) Nature Neuroscience definitions
     task_groups = {
         'Go Family': ['fdgo', 'reactgo', 'delaygo'],
         'Anti Family': ['fdanti', 'reactanti', 'delayanti'],
@@ -28,13 +28,13 @@ def plot_fig2a(model_size_list, color_dict=None):
         'Dly DM Family': ['delaydm1', 'delaydm2', 'contextdelaydm1', 'contextdelaydm2', 'multidelaydm'],
         'Matching Family': ['dmsgo', 'dmsnogo', 'dmcgo', 'dmcnogo']
     }
-    
-    # 创建一个从任务名到组名的反向映射
+
+    # Create reverse mapping from task name to group name
     task_to_group = {task: group for group, tasks in task_groups.items() for task in tasks}
 
-    # 2. 如果未提供颜色字典，则创建一个默认的
+    # 2. Create default color dictionary if not provided
     if color_dict is None:
-        # 使用一个视觉上区分度高的色板
+        # Use a visually distinctive color palette
         group_colors = plt.cm.get_cmap('tab10', len(task_groups))
         color_dict = {group: group_colors(i) for i, group in enumerate(task_groups.keys())}
 
@@ -48,42 +48,42 @@ def plot_fig2a(model_size_list, color_dict=None):
         for task_idx, task_name in enumerate(task_name_list):
             modularity_seed_array, _ = get_seed_avg(directory_name,
                 model_size, task=task_name, seed_list=seed_list, chance_flag=False)
-            
-            # **修改点 1：为箱线图收集每个种子（seed）的最大模块化值**
-            # modularity_mp[task_name] = modularity_seed_array.mean(axis=1) # 原来的代码
-            modularity_mp[task_name] = modularity_seed_array.max(axis=1) # 形状: (num_seeds,)
+
+            # **Modification 1: Collect max modularity value for each seed for boxplot**
+            # modularity_mp[task_name] = modularity_seed_array.mean(axis=1) # Original code
+            modularity_mp[task_name] = modularity_seed_array.max(axis=1) # Shape: (num_seeds,)
 
         fig, ax = plt.subplots(figsize=(10, 5))
-        
-        # 准备箱线图数据和颜色
+
+        # Prepare boxplot data and colors
         data_for_boxplot = [modularity_mp[task] for task in task_name_list]
         box_colors = [color_dict[task_to_group[task]] for task in task_name_list]
 
-        # **修改点 2：使用 ax.boxplot 替换 ax.bar**
-        bp = ax.boxplot(data_for_boxplot, 
-                        patch_artist=True, # 允许填充颜色
-                        vert=True,       # 垂直箱线图
-                        showfliers=False) # 不显示离群值（通常为了图表更简洁）
+        # **Modification 2: Use ax.boxplot instead of ax.bar**
+        bp = ax.boxplot(data_for_boxplot,
+                        patch_artist=True, # Allow color filling
+                        vert=True,       # Vertical boxplot
+                        showfliers=False) # Hide outliers (usually for cleaner visualization)
 
-        # 设置箱体颜色
+        # Set box colors
         for patch, color in zip(bp['boxes'], box_colors):
             patch.set_facecolor(color)
-            patch.set_alpha(0.7) # 添加一些透明度
-        
-        # 可选：设置中位数线的样式
+            patch.set_alpha(0.7) # Add some transparency
+
+        # Optional: Set median line style
         for median in bp['medians']:
             median.set(color='black', linewidth=1.5)
 
-        # 设置轴标签和标题
-        ax.set_xticks(range(1, len(task_name_list) + 1)) # 箱线图的x轴从1开始
+        # Set axis labels and title
+        ax.set_xticks(range(1, len(task_name_list) + 1)) # Boxplot x-axis starts from 1
         ax.set_xticklabels(task_name_list, rotation=90, fontsize=13)
-        
-        # **更新 Y 轴标签**
-        # ax.set_ylabel('Max Modularity (Q)', fontsize=12) 
-        ax.set_ylabel('Mean Modularity (Q)', fontsize=15) 
+
+        # **Update Y-axis label**
+        # ax.set_ylabel('Max Modularity (Q)', fontsize=12)
+        ax.set_ylabel('Mean Modularity (Q)', fontsize=15)
         ax.set_xlabel('Task', fontsize=15)
-        
-        # **更新标题**
+
+        # **Update title**
         # ax.set_title(f'Task-elicited Max Modularity Distribution (Model Size: {model_size})', fontsize=14)
         ax.set_title(f'Task-elicited Mean Modularity Distribution (Model Size: {model_size})', fontsize=17)
 
@@ -94,7 +94,7 @@ def plot_fig2a(model_size_list, color_dict=None):
         # ax.set_ylim(bottom=0.15)
         ax.set_ylim(bottom=0.05)
 
-        # 图例保持不变
+        # Legend remains unchanged
         legend_elements = [Patch(facecolor=color_dict[group], label=group)
                            for group in task_groups.keys()]
         ax.legend(handles=legend_elements, bbox_to_anchor=(1.02, 1), fontsize=15, title_fontsize=16,
@@ -110,11 +110,11 @@ def plot_fig2a(model_size_list, color_dict=None):
         plt.show()
 
 
-# --- 使用示例 ---
+# --- Usage Example ---
 if __name__ == '__main__':
-    model_sizes_to_test = [64, 32, 16, 8] 
-    
-    # (可选) 自定义颜色
+    model_sizes_to_test = [64, 32, 16, 8]
+
+    # (Optional) Custom colors
     custom_colors = {
         'Go Family': 'C0', # Blue
         'Anti Family': 'C1', # Orange

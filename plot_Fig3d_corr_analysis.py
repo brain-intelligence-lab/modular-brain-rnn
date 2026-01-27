@@ -13,8 +13,8 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 def list_files(directory):
     path_list = []
     for root, dirs, files in os.walk(directory):
-        dirs.sort()  # 对目录列表进行就地排序
-        files.sort()  # 对文件列表进行就地排序
+        dirs.sort()  # Sort directory list in-place
+        files.sort()  # Sort file list in-place
         files.reverse()
         for file in files:
             if '.pth' in file or '.txt' in file:
@@ -31,16 +31,16 @@ def plot_scatter(x_array, y_array, xlabel='Modularity', ylabel='Performance', fi
     r, p = stats.pearsonr(x_array, y_array)
     print(f'step:{step}, r:{r:.4f}, p:{p:.6f}, len:{len(y_array)}')
 
-    # 设置颜色和样式
+    # Set colors and styles
     sns.regplot(
         x=x_array, 
         y=y_array, 
-        scatter_kws={'s':1, 'color':'#2ca02c'},  # 柔和的浅绿色
-        line_kws={'color':'#1f77ff', 'linewidth':0.5, 'alpha':1},  # 天蓝色，去掉阴影
-        ci=None  # 去掉回归线的置信区间阴影
+        scatter_kws={'s':1, 'color':'#2ca02c'},  # Soft light green
+        line_kws={'color':'#1f77ff', 'linewidth':0.5, 'alpha':1},  # Sky blue, remove shadow
+        ci=None  # Remove confidence interval shadow of regression line
     )
 
-    # 添加标题和标签
+    # Add title and labels
     # plt.title('Modularity vs Performance: Correlation Analysis')
     plt.xlabel(f'{xlabel}', fontsize=6)
     plt.ylabel(f'{ylabel}', fontsize=6)
@@ -53,17 +53,17 @@ def plot_scatter(x_array, y_array, xlabel='Modularity', ylabel='Performance', fi
     axs.spines['right'].set_linewidth(0.25)  
     axs.tick_params(axis='both', width=0.25, length=1.0, labelsize=5, pad=1)
 
-    # 添加 Pearson r 和 p 值信息
+    # Add Pearson r and p value information
     plt.text(
-        0.70, 0.95,  # x, y 位置（相对坐标）
-        f'r = {r:.4f}\np = {p:.2e}',  # 显示的文本
-        transform=plt.gca().transAxes,  # 使用相对坐标
-        verticalalignment='top',  # 文本顶部对齐
-        fontsize=5,  # 这里指定文本的字体大小
-        bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5', linewidth=0.25)  # 边框设置
+        0.70, 0.95,  # x, y position (relative coordinates)
+        f'r = {r:.4f}\np = {p:.2e}',  # Text to display
+        transform=plt.gca().transAxes,  # Use relative coordinates
+        verticalalignment='top',  # Text top alignment
+        fontsize=5,  # Specify font size here
+        bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5', linewidth=0.25)  # edge框Set
     )
 
-    axs.set_box_aspect(1)  # 设置绘图框的高宽比为1
+    axs.set_box_aspect(1)  # Set aspect ratio of plotting box to 1
     plt.tight_layout()
 
     plt.savefig(f"./figures/Fig3/Fig3d/{file_name}.svg", format='svg', dpi=300)
@@ -215,7 +215,7 @@ for m_idx, n_rnn in enumerate(model_size_list):
 
     m = len(p_list)
 
-    # 计算 FDR threshold
+    # Calculate FDR threshold
     thresholds = np.arange(1, m+1) / m * 0.05
 
     sort_p_list = np.array(sort_p_list)
@@ -229,23 +229,23 @@ for m_idx, n_rnn in enumerate(model_size_list):
     
 
     print(fdr_threshold)
-    # 生成要显示的标签位置
+    # Generate label positions to display
     x_ticks = [ i for i in range(39, len(r_list)+1, 40)]
 
     x_tick_labels = [500*(i+1) for i in x_ticks]
-    # 定义行数
+    # Define行数
     rows = 2
 
     fig_width = 2.8
-    fig_height = 3.5 # 给标题、标签和间距留出一些额外空间
+    fig_height = 3.5 # 给title、label和间距留出一些额外space
     fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(fig_width, fig_height))
 
-    # --- 子图 1: 相关性 (Correlation) ---
+    # --- subgraph 1: correlation (Correlation) ---
     axs[0].bar(range(len(r_list)), r_list, color='lightsteelblue')
     axs[0].set_title(f'# Hidden Neurons: {n_rnn}', fontsize=7)
     axs[0].set_ylabel('Correlation', fontsize=6, labelpad=1)
 
-    # --- 子图 2: P-value ---
+    # --- subgraph 2: P-value ---
     logp_value_threshold = -np.log10(fdr_threshold)
     p_list_log = [-np.log10(p) for p in p_list]
 
@@ -257,23 +257,23 @@ for m_idx, n_rnn in enumerate(model_size_list):
 
     for ax in axs:
         # --- 这是保证正方形的关键 ---
-        ax.set_box_aspect(1)  # 设置绘图框的高宽比为1
+        ax.set_box_aspect(1)  # Set aspect ratio of plotting box to 1
         
         ax.set_xticks(x_ticks)
         ax.set_xticklabels(x_tick_labels)
         
-        # 设置坐标轴样式
+        # Set坐标轴style
         for spine in ax.spines.values():
             spine.set_linewidth(0.25)
             
         ax.tick_params(axis='both', width=0.25, length=1.0, labelsize=5, pad=1)
         ax.set_xlabel('Iterations', fontsize=6, labelpad=1)
 
-    # 移除顶部图的 x 轴标签
+    # Remove顶部graph的 x 轴label
     axs[0].set_xlabel('')
 
-    # 调整子图之间的间距
-    plt.subplots_adjust(hspace=0.6) # 增加垂直间距，防止标题和上图重叠
+    # adjustsubgraph之间的间距
+    plt.subplots_adjust(hspace=0.6) # 增加垂直间距，防止title和上graph重叠
 
     plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.svg", format='svg', dpi=300)
     plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.jpg", format='jpg', dpi=300)

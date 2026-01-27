@@ -22,21 +22,21 @@ def cal_energy_given_para(gt_dist, tot_conn_num, Distance, FC, eta_vec, gamma_ve
 
     params_energy = {}
     min_energy = 100000.0
-    
-    # 预先将 Distance 和 K 转为 tensor
+
+    # Pre-convert Distance and K to tensor
     D_tensor = torch.tensor(Distance, device=device, dtype=torch.float32)
     K_tensor = torch.tensor(FC, device=device, dtype=torch.float32)
-    
-    
+
+
     prob_matrix_list = []
     for _, (eta, gamma) in enumerate(zip(eta_vec, gamma_vec)):
-        # 计算概率矩阵
+        # Calculate probability matrix
         Fd = torch.pow(D_tensor + 1e-9, eta)
         Fk = torch.pow(K_tensor + 1e-9, gamma)
         prob_matrix = Fd * Fk
         prob_matrix_list.append(prob_matrix)
-    
-    # 堆叠成 batch: [n_params, n, n]
+
+    # Stack into batch: [n_params, n, n]
     prob_matrix_batch = torch.stack(prob_matrix_list, dim=0)
     
     conn_matrix_batch = gnm_batched(prob_matrix_batch, tot_conn_num, directed, device=device)
@@ -47,19 +47,19 @@ def cal_energy_given_para(gt_dist, tot_conn_num, Distance, FC, eta_vec, gamma_ve
 
     KS_batch_list = []
     for i in range(4):
-        # 修正：将 gt 转换为 batch 形式
+        # Fix: Convert gt to batch form
         gt_tensor = torch.tensor(gt_dist[i], device=device)
-        # 扩展到 (B, N) 以匹配 graph_dists[i]
-        gt_batch = gt_tensor.unsqueeze(0).expand(batch_size, -1)            
+        # Expand to (B, N) to match graph_dists[i]
+        gt_batch = gt_tensor.unsqueeze(0).expand(batch_size, -1)
         KS_batch = ks_statistic_batch_gpu(graph_dists[i], gt_batch, device)
-        KS_batch_list.append(KS_batch) # 每个 KS_batch 形状 (B,)
+        KS_batch_list.append(KS_batch) # Each KS_batch has shape (B,)
 
     KS_all_features = torch.stack(KS_batch_list, dim=1)
 
     for idx, (eta, gamma) in enumerate(zip(eta_vec, gamma_vec)):
-        # 提取第 idx 个参数组合对应的 4 个 KS 值
-        current_ks = KS_all_features[idx] # 形状 (4,)
-        params_energy[(eta, gamma)] = [current_ks.cpu().numpy()] # 保持和原代码 list 结构一致
+        # Extract the 4 KS values corresponding to the idx-th parameter combination
+        current_ks = KS_all_features[idx] # Shape (4,)
+        params_energy[(eta, gamma)] = [current_ks.cpu().numpy()] # Maintain consistency with original code list structure
 
         e = current_ks.max().item() 
         if e < min_energy:
@@ -167,7 +167,7 @@ def read_func(file_name, directory_path = './runs/Fig5_data/energy/', return_KS=
         with open(file_path, 'r') as file:
             lines = file.readlines()
 
-        # 正则表达式模式，用于提取数据
+        # Regular expression pattern for data extraction
         pattern = re.compile(r'\((-?\d+\.\d+),\s*(-?\d+\.\d+)\):\[(.+?)\]')
 
         for line in lines:
@@ -211,20 +211,20 @@ def plot_figure5b(fitness_list_dict):
         for energy in energy_dist:
             data.append({'Generative model': modelname_map[model_name], 'Energy': energy})
 
-    df = pd.DataFrame(data)    
-    
-    palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # 米色, 绿色, 橙色, 蓝色
+    df = pd.DataFrame(data)
+
+    palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # Beige, green, orange, blue
     names_order = ['random', 'spatial', 'task', 'spatial+task']
     
     group = 'Generative model'
     column = 'Energy'
     
     fig, ax = plt.subplots(figsize=(1.8, 1.5))
-    ax = sns.boxplot(x=group, y=column, data=df, ax=ax, palette=palette,  
-                boxprops=dict(facecolor='none', linewidth=0.25), width=0.3, 
+    ax = sns.boxplot(x=group, y=column, data=df, ax=ax, palette=palette,
+                boxprops=dict(facecolor='none', linewidth=0.25), width=0.3,
                 flierprops={
-                             'markersize': 1,      # 异常值的大小
-                             'markeredgewidth': 0.25,  # 异常值边框线宽
+                             'markersize': 1,      # Size of outliers
+                             'markeredgewidth': 0.25,  # Edge line width of outliers
                              }, 
                 whiskerprops={'linewidth': 0.25}, medianprops={'linewidth': 0.25}, capprops={'linewidth': 0.25})
     ax = sns.stripplot(x=group, y=column, data=df, 
@@ -234,21 +234,21 @@ def plot_figure5b(fitness_list_dict):
     for i in range(len(names_order)):
         for j in range(i+1, len(names_order)):
             box_pairs.append((names_order[i], names_order[j]))
-    
-# 1. 初始化 Annotator 对象
+
+# 1. Initialize Annotator object
     annotator = Annotator(ax, box_pairs, data=df, x=group, y=column, order=names_order)
-    
-    # 2. 配置统计检验（t-test, 显著性星号等）
+
+    # 2. Configure statistical test (t-test, significance stars, etc.)
     annotator.configure(
         test='t-test_ind', 
         text_format='star', 
         loc='inside', 
         verbose=2, 
         fontsize=5,
-        line_width=0.5  # 可以根据需要调整线条粗细
+        line_width=0.5  # Can adjust line width as needed
     )
     
-    # 3. 执行检验并添加到图表
+    # 3. Execute test and add to plot
     annotator.apply_test()
     annotator.annotate()
 
@@ -292,10 +292,10 @@ def plot_figure5c():
 
     df = pd.DataFrame(combined_data)
 
-    palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # 米色, 绿色, 橙色, 蓝色
+    palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # Beige, green, orange, blue
     fig, ax = plt.subplots(figsize=(2.8, 1.5))
-    
-    # 绘制 boxplot，使用hue来区分不同模型，并保持同一模型的颜色一致    
+
+    # Draw boxplot using hue to distinguish different models and keep colors consistent for the same model    
     ax = sns.boxplot(x='Property', y='KS statistic', hue='Generative model', data=df, ax=ax, palette=palette,
                 boxprops=dict(facecolor='none', linewidth=0.25),
                 flierprops={
@@ -317,30 +317,30 @@ def plot_figure5c():
                 box_pairs.append(((property, generative_model_name[i]), (property, generative_model_name[j])))
 
     annotator = Annotator(ax, box_pairs, data=df, x='Property', y='KS statistic', order=property_name, hue='Generative model')
-    
-    # 2. 配置统计检验（t-test, 显著性星号等）
+
+    # 2. Configure statistical test (t-test, significance stars, etc.)
     annotator.configure(
         test='t-test_ind', 
         text_format='star', 
         loc='inside', 
         verbose=2, 
         fontsize=5,
-        line_width=0.5  
+        line_width=0.5
     )
-    
-    # 3. 执行检验并添加到图表
+
+    # 3. Execute test and add to plot
     annotator.apply_test()
     annotator.annotate()
 
-    
+
     ax.tick_params(axis='both', labelsize=5, pad=1.5)
     ax.tick_params(axis='both', width=0.25)
     ax.spines['top'].set_linewidth(0.25)    
     ax.spines['bottom'].set_linewidth(0.25) 
-    ax.spines['left'].set_linewidth(0.25)  
-    ax.spines['right'].set_linewidth(0.25)  
+    ax.spines['left'].set_linewidth(0.25)
+    ax.spines['right'].set_linewidth(0.25)
 
-    # 将图例放在图形外部
+    # Place legend outside the plot
     legend = ax.legend(title='Generative model', loc='lower right', fontsize=5, title_fontsize=6)
     frame = legend.get_frame()
     frame.set_linewidth(0.25) 
@@ -413,8 +413,8 @@ def plot_figure5defg(args, property='edge length'):
     model_dist['Brain'] = np.concatenate(ground_truth_dist)
     
     fig, axes = plt.subplots(3, 1, figsize=(1.8, 3.0))
-    # palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd']  # 蓝色, 橙色, 绿色, 
-    palette = ['#2ca02c', '#ff7f0e', '#1f77b4', '#9467bd']  # 绿色, 橙色, 蓝色, 紫色
+    # palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd']  # Blue, orange, green,
+    palette = ['#2ca02c', '#ff7f0e', '#1f77b4', '#9467bd']  # Green, orange, blue, purple
     alpha = 0.4
     
     all_dist = [dist for name, dist in model_dist.items()]
@@ -426,9 +426,9 @@ def plot_figure5defg(args, property='edge length'):
     for dist_id, (name, dist) in enumerate(model_dist.items()):
         if name == 'Brain':
             for axd_id in range(len(axes)):
-                # KDE曲线 + 填充
+                # KDE curve + fill
                 sns.kdeplot(dist, color=palette[dist_id], label=name, bw_adjust=0.5, fill=True, alpha=alpha-0.1, ax=axes[axd_id], linewidth=0.25)
-                # 直方图
+                # Histogram
                 axes[axd_id].hist(dist, bins=50, density=True, alpha=alpha, color=palette[dist_id], edgecolor='black', linewidth=0.25)
                 axes[axd_id].set_xlim(xlim[0], xlim[1])
         else:

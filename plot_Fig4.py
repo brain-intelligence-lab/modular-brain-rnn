@@ -92,7 +92,7 @@ def plot_figure4b(args):
             print(f'perf_{task}: {task_perf_mean_dict[task].mean():.4f}')
         
 
-        # 生成要显示的标签位置
+        # Generate label positions to display
         x_ticks = [i for i in range(20, modularity_seed_array.shape[1]+1, 20)]
         # x_ticks = [0] + x_ticks
         x_tick_labels = [500 * i for i in x_ticks]
@@ -198,8 +198,8 @@ def plot_figure4c(args):
     ax = sns.boxplot(x=group, y=column, data=df, ax=ax, palette=palette,  
                 boxprops=dict(facecolor='none', linewidth=0.25), width=0.3, 
                 flierprops={
-                                'markersize': 1,      # 异常值的大小
-                                'markeredgewidth': 0.25,  # 异常值边框线宽
+                                'markersize': 1,      # Size of outliers
+                                'markeredgewidth': 0.25,  # Edge line width of outliers
                                 }, 
                 whiskerprops={'linewidth': 0.25}, medianprops={'linewidth': 0.25}, capprops={'linewidth': 0.25})
     ax = sns.stripplot(x=group, y=column, data=df, 

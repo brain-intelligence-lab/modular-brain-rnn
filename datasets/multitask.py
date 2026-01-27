@@ -1699,7 +1699,7 @@ def get_default_hp(ruleset):
             # intelligent synapses parameters, tuple (c, ksi)
             'c_intsyn': 0,
             'ksi_intsyn': 0,
-            # 是否使用snn
+            # Whether to use SNN
             'use_snn': False,
         }
 
@@ -1709,9 +1709,9 @@ def get_default_hp(ruleset):
 
 class Multitask_Batched(torch.utils.data.Dataset):
     """
-    修改版本: 
-    - 数据按批次(batch)存储和读取。
-    - 数据生成采用周期性策略，确保每28个batches内任务分布固定。
+    Modified version:
+    - Data is stored and accessed in batches.
+    - Data generation uses a periodic strategy to ensure fixed task distribution within every 28 batches.
     """
     def __init__(self, hp, num_of_trials, batch_size, data_dir):
         self.hp = hp
@@ -1737,15 +1737,15 @@ class Multitask_Batched(torch.utils.data.Dataset):
         self.batch_paths = self._collect_batch_paths()
 
     def _check_data_exists(self):
-        """检查所需数量的批次文件是否已存在"""
+        """Check if the required number of batch files already exist"""
         if not os.path.exists(self.data_dir):
             return False
-        
+
         existing_files = [f for f in os.listdir(self.data_dir) if f.endswith('.pt')]
         return len(existing_files) >= self.num_batches
 
     def _collect_batch_paths(self):
-        """收集所有 batch 文件的路径，并按编号排序"""
+        """Collect all batch file paths and sort them by index number"""
         files_with_index = []
         for f in os.listdir(self.data_dir):
             if f.endswith('.pt'):
@@ -1758,67 +1758,67 @@ class Multitask_Batched(torch.utils.data.Dataset):
 
     def _generate_and_save_batches(self):
         """
-        【核心修改】按周期生成和保存批次。
-        每个周期包含28个批次，任务分布固定，但周期内顺序随机。
+        [Core modification] Generate and save batches in cycles.
+        Each cycle contains 28 batches with fixed task distribution, but random order within each cycle.
         """
         os.makedirs(self.data_dir, exist_ok=True)
-        
-        # 1. 定义周期的长度
+
+        # 1. Define the cycle length
         cycle_length = int(1.0/ np.min(self.task_prob))
-        
+
         # assert self.num_batches % cycle_length == 0, \
         #     f"Total number of batches ({self.num_batches}) \
         #         must be a multiple of cycle_length ({cycle_length})."
 
         num_cycles = (self.num_batches + cycle_length - 1) // cycle_length
 
-        # 2. 根据概率计算每个周期内，每个任务应该生成的批次数
-        # 我们假设概率的分母就是 cycle_length (28)
+        # 2. Calculate how many batches each task should generate per cycle based on probabilities
+        # We assume the denominator of probabilities is cycle_length (28)
         task_counts_per_cycle = (np.array(self.task_prob) * cycle_length).round().astype(int)
-        
-        # 安全检查：确保计算出的总数正好等于一个周期的长度
+
+        # Safety check: ensure the calculated total equals exactly one cycle length
         if task_counts_per_cycle.sum() != cycle_length:
             raise ValueError(f"Task probabilities do not sum up \
                 correctly for a cycle of {cycle_length}. "
             f"Calculated counts: {task_counts_per_cycle.sum()}")
 
-        # 3. 创建一个基础的、未打乱的周期任务“播放列表”
+        # 3. Create a base, unshuffled cycle task "playlist"
         base_cycle_playlist = []
         for task_name, count in zip(self.task_list, task_counts_per_cycle):
             base_cycle_playlist.extend([task_name] * count)
 
-        # 4. 循环生成每个周期的数据
+        # 4. Loop to generate data for each cycle
         current_batch_index = 0
-        
+
         for _ in tqdm(range(num_cycles)):
 
-            # 5. 复制并打乱当前周期的任务顺序
+            # 5. Copy and shuffle the task order for the current cycle
             shuffled_playlist = base_cycle_playlist.copy()
             random.shuffle(shuffled_playlist)
-            
-            # 6. 遍历打乱后的播放列表，生成并保存每个批次
+
+            # 6. Iterate through the shuffled playlist, generate and save each batch
             for task_name_now in shuffled_playlist:
                 trial = generate_trials(
                     task_name_now, self.hp, 'random',
                     batch_size=self.batch_size
                 )
-                
-                # 转换并打包张量
+
+                # Convert and package tensors
                 input_cpu = torch.from_numpy(trial.x)
                 target_cpu = torch.from_numpy(trial.y)
                 c_mask_cpu = torch.from_numpy(trial.c_mask)
                 y_loc_cpu = torch.from_numpy(trial.y_loc)
-                
+
                 if torch.numel(c_mask_cpu) == torch.numel(target_cpu):
                     c_mask_cpu = c_mask_cpu.reshape(target_cpu.shape[0], target_cpu.shape[1], -1)
 
                 batch_sample = (input_cpu, target_cpu, c_mask_cpu, y_loc_cpu)
-                
-                # 使用连续的索引号保存文件
+
+                # Save files with consecutive index numbers
                 file_path = os.path.join(self.data_dir, f'{task_name_now}_{current_batch_index}.pt')
                 torch.save(batch_sample, file_path)
-                
-                # 更新全局批次索引
+
+                # Update global batch index
                 current_batch_index += 1
 
 
@@ -1833,10 +1833,10 @@ class Multitask_Batched(torch.utils.data.Dataset):
 
 
 def _check_data_exists(data_dir, num_batches):
-    """检查所需数量的批次文件是否已存在"""
+    """Check if the required number of batch files already exist"""
     if not os.path.exists(data_dir):
         return False
-    
+
     existing_files = [f for f in os.listdir(data_dir) if f.endswith('.pt')]
     return len(existing_files) >= num_batches
 
@@ -1844,8 +1844,8 @@ def _check_data_exists(data_dir, num_batches):
 
 class Multitask_Batches_Realtime_Gen(torch.utils.data.Dataset):
     """
-    修改版本: 
-    - 数据按批次(batch)生成
+    Modified version:
+    - Data is generated in batches
     """
     def __init__(self, hp, num_batches, batch_size):
         self.hp = hp
@@ -1939,7 +1939,7 @@ def preprocess_dataset_for_gpu_global(dataset, hp_rules, device):
     rule_indices = {}
     current_index = 0
 
-    # 必须按hp['rules']的顺序处理，以保证后续评估的一致性
+    # Must process in the order of hp['rules'] to ensure consistency in subsequent evaluation
     for rule in hp_rules:
         batches = dataset.get(rule, [])
         if not batches: continue

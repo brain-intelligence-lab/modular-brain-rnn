@@ -361,8 +361,8 @@ def plot_2h(model_size_list, task_num_list, load_step=46500):
 
 
     ax.legend(
-        new_handles, new_labels, fontsize=4, frameon=False, 
-        bbox_to_anchor=(0.99, 0.05), # <--- 调整 x 和 y
+        new_handles, new_labels, fontsize=4, frameon=False,
+        bbox_to_anchor=(0.99, 0.05), # <--- Adjust x and y
         loc='lower right',
         handletextpad=0.02)
 

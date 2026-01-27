@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# 定义一个函数来处理信号
+# Define a function to handle signals
 cleanup() {
     echo "Caught SIGINT signal. Cleaning up..."
-    kill $(jobs -p)  # 杀死所有子进程
+    kill $(jobs -p)  # Kill all child processes
     exit
 }
 
-# 捕获SIGINT信号
+# Capture SIGINT signal
 trap 'cleanup' SIGINT
 
-python main.py --gen_dataset_files --max_trials 3000000 
-# 等待数据集生成完成
+python main.py --gen_dataset_files --max_trials 3000000
+# Wait for dataset generation to complete
 
 n_rnn=84
 gpus=(0 1 2 3 4 5 6 7)
@@ -26,9 +26,9 @@ for seed in "${seeds[@]}"; do
     gpu=${gpus[$index]}
     log_dir="./runs/Fig4bc/all-at-once/n_rnn_${n_rnn}_seed_${seed}"
     echo "Launching all-at-once mode on GPU $gpu with seed $seed"
-    # 确保日志目录存在
+    # Ensure log directory exists
     mkdir -p $log_dir
-    # 启动训练进程
+    # Start training process
     python main.py \
         --n_rnn $n_rnn \
         --rec_scale_factor 0.1 \
@@ -51,9 +51,9 @@ for seed in "${seeds[@]}"; do
     gpu=${gpus[$index]}
     log_dir="./runs/Fig4bc/incremental/n_rnn_${n_rnn}_seed_${seed}"
     echo "Launching connection_incremental mode on GPU $gpu with seed $seed"
-    # 确保日志目录存在
+    # Ensure log directory exists
     mkdir -p $log_dir
-    # 启动训练进程
+    # Start training process
     python main.py \
         --n_rnn $n_rnn \
         --rec_scale_factor 0.1 \
@@ -76,6 +76,6 @@ for seed in "${seeds[@]}"; do
 
 done
 echo "All jobs for conn_num=$conn_num started at $(date)"
-wait  # 等待所有后台任务完成
+wait  # Wait for all background tasks to complete
 
 

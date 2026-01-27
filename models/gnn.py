@@ -32,5 +32,5 @@ class GCN(torch.nn.Module):
                 sum_before_scaling = target_layer.lin.weight.data.abs().sum().item()
                 target_layer.lin.weight.data *= scale_factor
                 sum_after_scaling = dict(self.named_modules())[layer].lin.weight.data.abs().sum().item()
-                assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "缩放后的权重和不符合预期！"
-                print(f"已将层 '{layer}' 的权重乘以缩放)")
+                assert np.isclose(sum_after_scaling, sum_before_scaling * scale_factor), "Scaled weight sum does not meet expectations!"
+                print(f"Multiplied weights of layer '{layer}' by scale factor")
