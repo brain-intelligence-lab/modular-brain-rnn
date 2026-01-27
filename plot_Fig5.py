@@ -1,199 +1,150 @@
-import scipy.io
 import numpy as np
 import torch
 from functions.generative_network_modelling.generative_network_modelling import *
 from functions.utils.math_utils import lock_random_seed
+from functions.utils.eval_utils import prepare_data_for_gnm
 import matplotlib.pyplot as plt
 import argparse
 import seaborn as sns
 import matplotlib
-import datasets.multitask as task
 from tqdm import tqdm
 import re
 import pandas as pd
-from statannot import add_stat_annotation
+from statannotations.Annotator import Annotator
 import glob
 import os
 import pdb
 
 matplotlib.rcParams['pdf.fonttype'] = 42
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
-def Sample_conn_num(prob_matrix, tot_conn_num):
-    n = prob_matrix.shape[0]
-    u_indx, v_indx = np.where(np.ones((n, n))) 
-    indx = u_indx  * n + v_indx
-    choices_index = np.random.choice(indx, size=tot_conn_num, replace=False, p=prob_matrix.flatten())
-
-    u_indices = choices_index // n  
-    v_indices = choices_index % n  
-    
-    result_counter_matrix = np.zeros((n, n), dtype=int)
-    np.add.at(result_counter_matrix, (u_indices, v_indices), 1)
-
-    assert result_counter_matrix.sum() == tot_conn_num
-    return result_counter_matrix
-
-def gnm(Distance, Kseed, eta, gamma, tot_conn_num):
-    Fd = ( Distance + 1e-5 ) ** eta
-    Fk = ( Kseed + 1e-5 ) ** gamma
-    prob_matrix = Fd * Fk
-    prob_matrix = prob_matrix / prob_matrix.sum()
-    return Sample_conn_num(prob_matrix, tot_conn_num)
-
-def get_target(conn_matrix, Distance):
-    target = []
-    target.append(bct.degrees_und(conn_matrix))
-    target.append(bct_gpu.clustering_coef_bu_gpu(conn_matrix, device=device))
-    target.append(bct_gpu.betweenness_bin_gpu(conn_matrix, device=device))
-    target.append(Distance[conn_matrix > 0])
-    return target
-
-def cal_energy_func(y_target, tot_conn_num, Distance, B, eta_vec, gamma_vec, task_name):
+def cal_energy_given_para(gt_dist, tot_conn_num, Distance, FC, eta_vec, gamma_vec, task_name, directed):
 
     params_energy = {}
     min_energy = 100000.0
-
-    D = np.ones_like(Distance)
-    K = np.ones_like(Distance)
-    if 'spatial' in task_name:
-        D = Distance
     
+    # 预先将 Distance 和 K 转为 tensor
+    D_tensor = torch.tensor(Distance, device=device, dtype=torch.float32)
+    K_tensor = torch.tensor(FC, device=device, dtype=torch.float32)
+    
+    
+    prob_matrix_list = []
     for _, (eta, gamma) in enumerate(zip(eta_vec, gamma_vec)):
-        params_energy[(eta, gamma)] = []
+        # 计算概率矩阵
+        Fd = torch.pow(D_tensor + 1e-9, eta)
+        Fk = torch.pow(K_tensor + 1e-9, gamma)
+        prob_matrix = Fd * Fk
+        prob_matrix_list.append(prob_matrix)
+    
+    # 堆叠成 batch: [n_params, n, n]
+    prob_matrix_batch = torch.stack(prob_matrix_list, dim=0)
+    
+    conn_matrix_batch = gnm_batched(prob_matrix_batch, tot_conn_num, directed, device=device)
+    
+    graph_dists = get_graph_distribution_batched(conn_matrix_batch, Distance, device, directed=directed)
+    
+    batch_size = graph_dists[0].shape[0]
 
-        if 'multitask' in task_name:
-            K = B
+    KS_batch_list = []
+    for i in range(4):
+        # 修正：将 gt 转换为 batch 形式
+        gt_tensor = torch.tensor(gt_dist[i], device=device)
+        # 扩展到 (B, N) 以匹配 graph_dists[i]
+        gt_batch = gt_tensor.unsqueeze(0).expand(batch_size, -1)            
+        KS_batch = ks_statistic_batch_gpu(graph_dists[i], gt_batch, device)
+        KS_batch_list.append(KS_batch) # 每个 KS_batch 形状 (B,)
 
-        if 'matching' in task_name:
-            conn_matrix = matching_gen(D, FC=K, eta=eta, gamma=gamma, tot_conn_num=tot_conn_num)
-        else:
-            conn_matrix = gnm(D, K, eta, gamma, tot_conn_num)
+    KS_all_features = torch.stack(KS_batch_list, dim=1)
 
-        x_target = get_target(conn_matrix, Distance)
+    for idx, (eta, gamma) in enumerate(zip(eta_vec, gamma_vec)):
+        # 提取第 idx 个参数组合对应的 4 个 KS 值
+        current_ks = KS_all_features[idx] # 形状 (4,)
+        params_energy[(eta, gamma)] = [current_ks.cpu().numpy()] # 保持和原代码 list 结构一致
 
-        KS = np.zeros((4))
-        for i in range(4):
-            KS[i] = ks_statistic_gpu(x_target[i], y_target[i], device)
-
-        params_energy[(eta, gamma)].append(KS)
-
-        params_energy[(eta, gamma)] = np.array(params_energy[(eta, gamma)])
-        min_energy = min(min_energy, np.mean(params_energy[(eta, gamma)].max(1)))
-
-        if 'random' in task_name:
-            break
-
+        e = current_ks.max().item() 
+        if e < min_energy:
+            min_energy = e
+            
+    
     file_path = './runs/Fig5_data/energy'
     if not os.path.exists(file_path):
         os.makedirs(file_path)
     
     with open(f'{file_path}/{task_name}.txt', 'w') as file:
-        for key, list in params_energy.items():
-            for KS in list:
+        for key, ks_list in params_energy.items():
+            for KS in ks_list:
                 file.write('%s:%s\n' % (key, KS))
 
     return min_energy
-
-def get_hidden_states(model):
-    hp = model.hp
-    hidden_states_list = []
-    def hook(module, input, output):
-        input, = input
-        # input.shape: T * Batch_size * N
-        hidden_states_list.append(input.detach().mean(dim=(1)))
-        
-    handle = model.readout.register_forward_hook(hook)
-    for rule in hp['rule_trains']:
-        trial = task.generate_trials(
-            rule, hp, 'random',
-            batch_size=512)
-
-        input = torch.from_numpy(trial.x).to(device)
-        output = model(input)
-
-    handle.remove()
-    return hidden_states_list
-
-def pre_process(load_step, num_of_seed:int):
-    subjects_conn_data = scipy.io.loadmat('./datasets/brain_hcp_data/84/structureM_use.mat')['structureM_use']
-    subjects_conn_data = np.transpose(subjects_conn_data, [2, 0, 1])
-    subjects_conn_data = subjects_conn_data.astype(np.float32)
-    Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
-
-    B = []
-    for seed in tqdm(range(1, num_of_seed+1)):
-        file_name = f'./runs/Fig5_data/84/n_rnn_84_task_20_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
-        model = torch.load(file_name, device)   
-        # weights = model.recurrent_conn.weight.data.detach().cpu().numpy()
-        # weights = np.abs(weights)
-        # np.fill_diagonal(weights, 0)
-        # B.append(weights)
-
-        hidden_states_list = get_hidden_states(model)
-        for task_id in range(20):
-            hidden_states = hidden_states_list[task_id]
-            random_value = torch.rand_like(hidden_states) 
-            hidden_states =  hidden_states + random_value * 1e-7
-
-            hidden_states_mean = hidden_states.detach().cpu().numpy()
-            fc = np.corrcoef(hidden_states_mean, rowvar=False)
-            fc[fc < 0] = 1e-5
-            B.append(fc)
-        
-    return subjects_conn_data, Distance, B
     
-def cal_energy(num_of_people=20, load_step=10000):
-    nruns = 900
+def cal_energy(args):
+    num_of_people = args.people_num
+    load_step = args.load_step
     multi_task_num = 20
     num_of_seed = (num_of_people + multi_task_num - 1) // multi_task_num
 
-    eta_vec = np.linspace(-3.0, 3.0, int(np.sqrt(nruns)))
-    gamma_vec = np.linspace(-3.0, 3.0, int(np.sqrt(nruns)))
+    GT_subjects, Distance, Fc = prepare_data_for_gnm(load_step, num_of_seed=num_of_seed, device=device)
 
-    eta_vec, gamma_vec = np.meshgrid(eta_vec, gamma_vec)
-    eta_vec, gamma_vec = eta_vec.ravel(), gamma_vec.ravel()
-    Atgt, Distance, B = pre_process(load_step, num_of_seed=num_of_seed)
-
-    num_of_people = min(Atgt.shape[0], num_of_people)
+    num_of_people = min(GT_subjects.shape[0], num_of_people)
     fitness_list_dict = {}
 
-    y_target_list = []
-    for p in tqdm(range(num_of_people)):
-        cortex_conn = Atgt[p, ...]
-        y_target = get_target(cortex_conn, Distance)
-        y_target_list.append(y_target)
+    gt_dist_list = []
+    for p in tqdm(range(num_of_people)):    
+        cortex_conn = GT_subjects[p, ...]
+        gt_dist = get_graph_distribution(cortex_conn, Distance, device=device)
+        gt_dist_list.append(gt_dist)
     print("pre_process finished!")
 
+
+    # ---- grid (ensure 0 is included) ----
+    grid_n = int(np.sqrt(args.nruns))
+    if grid_n % 2 == 0:
+        grid_n += 1  # ensure 0 included
+    eta_grid = np.linspace(-3.0, 3.0, grid_n)
+    gamma_grid = np.linspace(-3.0, 3.0, grid_n)
+
+    eta_vec, gamma_vec = np.meshgrid(eta_grid, gamma_grid)
+    eta_vec, gamma_vec = eta_vec.ravel(), gamma_vec.ravel()
+
+    eta_random, gamma_random = np.array([0.0]), np.array([0.0])
+    
     fitness_list_random = []
     for p in tqdm(range(num_of_people)):
-        total_conn_num = int((Atgt[p, ...] > 0).sum())
-        y_target = y_target_list[p]
-        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, task_name=f'random_{p}')
+        total_conn_num = int((GT_subjects[p, ...] > 0).sum())
+        gt_dist = gt_dist_list[p]
+        fitness = cal_energy_given_para(gt_dist, total_conn_num, Distance, \
+            Fc[p], eta_random, gamma_random, f'random_{p}', args.directed)
         fitness_list_random.append(fitness)
     fitness_list_dict['random'] = fitness_list_random
-    
+
+    eta_spatial, gamma_spatial = eta_grid, np.array([0.0]*len(eta_grid))
+
     fitness_list_spatial = []
     for p in tqdm(range(num_of_people)):
-        total_conn_num = int((Atgt[p, ...] > 0).sum())
-        y_target = y_target_list[p]
-        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, f'spatial_{p}')
+        total_conn_num = int((GT_subjects[p, ...] > 0).sum())
+        gt_dist = gt_dist_list[p]
+        fitness = cal_energy_given_para(gt_dist, total_conn_num, Distance, \
+            Fc[p], eta_spatial, gamma_spatial, f'spatial_{p}', args.directed)
         fitness_list_spatial.append(fitness)
     fitness_list_dict['spatial'] = fitness_list_spatial
 
+    eta_multitask, gamma_multitask = np.array([0.0]*len(gamma_grid)), gamma_grid
     fitness_list_multitask = []
     for p in tqdm(range(num_of_people)):
-        total_conn_num = int((Atgt[p, ...] > 0).sum())
-        y_target = y_target_list[p]
-        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, f'multitask_{p}')
+        total_conn_num = int((GT_subjects[p, ...] > 0).sum())
+        gt_dist = gt_dist_list[p]
+        fitness = cal_energy_given_para(gt_dist, total_conn_num, Distance, \
+            Fc[p], eta_multitask, gamma_multitask, f'multitask_{p}', args.directed)
         fitness_list_multitask.append(fitness)
     fitness_list_dict['multitask'] = fitness_list_multitask
 
+    eta_spatial_multitask, gamma_spatial_multitask = eta_vec, gamma_vec
     fitness_list_spatial_multitask = []
     for p in tqdm(range(num_of_people)):
-        total_conn_num = int((Atgt[p, ...] > 0).sum())
-        y_target = y_target_list[p]
-        fitness = cal_energy_func(y_target, total_conn_num, Distance, B[p], eta_vec, gamma_vec, f'spatial_multitask_{p}')
+        total_conn_num = int((GT_subjects[p, ...] > 0).sum())
+        gt_dist = gt_dist_list[p]
+        fitness = cal_energy_given_para(gt_dist, total_conn_num, Distance, \
+            Fc[p],  eta_spatial_multitask, gamma_spatial_multitask, f'spatial_multitask_{p}', args.directed)
         fitness_list_spatial_multitask.append(fitness)
     fitness_list_dict['spatial_multitask'] = fitness_list_spatial_multitask
     
@@ -246,11 +197,80 @@ def read_func(file_name, directory_path = './runs/Fig5_data/energy/', return_KS=
 
     return min_energy_list
 
+
+def plot_figure5b(fitness_list_dict):
+    model_list = ['random', 'spatial', 'multitask', 'spatial_multitask',]
+    modelname_map = {'random':'random', 'spatial':'spatial', 'multitask':'task', 'spatial_multitask':'spatial+task', 'matching':'matching*', 'spatial_matching':'matching'}
+    data = []
+    for _, model_name in enumerate(model_list):
+        if fitness_list_dict is None:
+            energy_dist = read_func(f'{model_name}_[0-9]*')
+        else:
+            energy_dist = fitness_list_dict[model_name]
+
+        for energy in energy_dist:
+            data.append({'Generative model': modelname_map[model_name], 'Energy': energy})
+
+    df = pd.DataFrame(data)    
+    
+    palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # 米色, 绿色, 橙色, 蓝色
+    names_order = ['random', 'spatial', 'task', 'spatial+task']
+    
+    group = 'Generative model'
+    column = 'Energy'
+    
+    fig, ax = plt.subplots(figsize=(1.8, 1.5))
+    ax = sns.boxplot(x=group, y=column, data=df, ax=ax, palette=palette,  
+                boxprops=dict(facecolor='none', linewidth=0.25), width=0.3, 
+                flierprops={
+                             'markersize': 1,      # 异常值的大小
+                             'markeredgewidth': 0.25,  # 异常值边框线宽
+                             }, 
+                whiskerprops={'linewidth': 0.25}, medianprops={'linewidth': 0.25}, capprops={'linewidth': 0.25})
+    ax = sns.stripplot(x=group, y=column, data=df, 
+                dodge=False, ax=ax, palette=palette, jitter=0.1, size=0.6, color='black', alpha=0.4)
+    
+    box_pairs = []
+    for i in range(len(names_order)):
+        for j in range(i+1, len(names_order)):
+            box_pairs.append((names_order[i], names_order[j]))
+    
+# 1. 初始化 Annotator 对象
+    annotator = Annotator(ax, box_pairs, data=df, x=group, y=column, order=names_order)
+    
+    # 2. 配置统计检验（t-test, 显著性星号等）
+    annotator.configure(
+        test='t-test_ind', 
+        text_format='star', 
+        loc='inside', 
+        verbose=2, 
+        fontsize=5,
+        line_width=0.5  # 可以根据需要调整线条粗细
+    )
+    
+    # 3. 执行检验并添加到图表
+    annotator.apply_test()
+    annotator.annotate()
+
+    ax.tick_params(axis='both', labelsize=5, pad=1.5)
+    ax.tick_params(axis='both', width=0.25)
+    ax.spines['top'].set_linewidth(0.25)    
+    ax.spines['bottom'].set_linewidth(0.25) 
+    ax.spines['left'].set_linewidth(0.25)  
+    ax.spines['right'].set_linewidth(0.25)  
+
+    ax.set_xlabel('Generative model', fontsize=6)
+    ax.set_ylabel('Energy', fontsize=6)
+    
+    # plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+    plt.savefig('./figures/Fig5/Fig5b.jpg', format='jpg', dpi=300)
+    plt.savefig('./figures/Fig5/Fig5b.svg', format='svg', dpi=300)
+
 def plot_figure5c():
     model_list = ['random', 'spatial', 'multitask', 'spatial_multitask']
     modelname_map = {'random':'random', 'spatial':'spatial', 'multitask':'task', 'spatial_multitask':'spatial+task'}
-    # property_name = ['degree', 'clustering', 'betweenness\ncentrality', 'edge\nlength']
-    property_name = ['degree', 'clustering', 'betweenness centrality', 'edge length']
+    property_name = ['node\ndegree', 'clustering\ncoefficient', 'betweenness\ncentrality', 'edge\nlength']
+    # property_name = ['degree', 'clustering', 'betweenness centrality', 'edge length']
     data_dict = {}
 
     for i, model_name in enumerate(model_list):
@@ -273,7 +293,7 @@ def plot_figure5c():
     df = pd.DataFrame(combined_data)
 
     palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # 米色, 绿色, 橙色, 蓝色
-    fig, ax = plt.subplots(figsize=(3.0, 1.5))
+    fig, ax = plt.subplots(figsize=(2.8, 1.5))
     
     # 绘制 boxplot，使用hue来区分不同模型，并保持同一模型的颜色一致    
     ax = sns.boxplot(x='Property', y='KS statistic', hue='Generative model', data=df, ax=ax, palette=palette,
@@ -285,8 +305,8 @@ def plot_figure5c():
                 whiskerprops={'linewidth': 0.25}, medianprops={'linewidth': 0.25}, capprops={'linewidth': 0.25})
     
 
-    ax = sns.stripplot(x='Property', y='KS statistic', hue='Generative model', data=df, 
-                dodge=True, ax=ax, palette=palette, jitter=0.1, size=0.8, color='black', alpha=0.4)
+    ax = sns.stripplot(x='Property', y='KS statistic', hue='Generative model', data=df,
+                dodge=True, ax=ax, palette=palette, jitter=0.1, size=0.8, color='black', alpha=0.4, legend=False)
     
     generative_model_name = ['random', 'spatial', 'task', 'spatial+task']
 
@@ -296,10 +316,24 @@ def plot_figure5c():
             for j in range(i+1, len(generative_model_name)):
                 box_pairs.append(((property, generative_model_name[i]), (property, generative_model_name[j])))
 
-    add_stat_annotation(ax, data=df, x='Property', y='KS statistic', hue='Generative model', box_pairs=box_pairs,
-                        test='t-test_ind', loc='inside', verbose=2, fontsize=5)
+    annotator = Annotator(ax, box_pairs, data=df, x='Property', y='KS statistic', order=property_name, hue='Generative model')
     
-    ax.tick_params(axis='both', labelsize=5)
+    # 2. 配置统计检验（t-test, 显著性星号等）
+    annotator.configure(
+        test='t-test_ind', 
+        text_format='star', 
+        loc='inside', 
+        verbose=2, 
+        fontsize=5,
+        line_width=0.5  
+    )
+    
+    # 3. 执行检验并添加到图表
+    annotator.apply_test()
+    annotator.annotate()
+
+    
+    ax.tick_params(axis='both', labelsize=5, pad=1.5)
     ax.tick_params(axis='both', width=0.25)
     ax.spines['top'].set_linewidth(0.25)    
     ax.spines['bottom'].set_linewidth(0.25) 
@@ -349,7 +383,7 @@ def plot_figure5defg(args, property='edge length'):
     multi_task_num = 20
     num_of_seed = (args.people_num + multi_task_num - 1) // multi_task_num
 
-    subjects_conn_data, Distance, B = pre_process(load_step=args.load_step, num_of_seed=num_of_seed)
+    subjects_conn_data, Distance, B = prepare_data_for_gnm(load_step=args.load_step, num_of_seed=num_of_seed, device=device)
     num_of_dist = min(subjects_conn_data.shape[0], args.people_num)
 
     model_dist = {}
@@ -405,8 +439,8 @@ def plot_figure5defg(args, property='edge length'):
 
     for axs in axes:
         axs.legend(fontsize=5)
-        axs.set_ylabel('Density', fontsize=6)
-        axs.tick_params(axis='both', labelsize=5)
+        axs.set_ylabel('Density', fontsize=5)
+        axs.tick_params(axis='both', labelsize=4)
         axs.tick_params(axis='both', width=0.25)  
         axs.spines['top'].set_linewidth(0.25)    
         axs.spines['bottom'].set_linewidth(0.25) 
@@ -414,72 +448,21 @@ def plot_figure5defg(args, property='edge length'):
         axs.spines['right'].set_linewidth(0.25)  
 
         
-    plt.xlabel(f'{property}', fontsize=6)
+    plt.xlabel(f'{property}', fontsize=5)
 
     plt.savefig(f'./figures/Fig5/Fig5defg_{property}_dist.jpg', format='jpg', dpi=300)
     plt.savefig(f'./figures/Fig5/Fig5defg_{property}_dist.svg', format='svg', dpi=300)
     print(f'{property} finish!')
 
 
-def plot_figure5b(fitness_list_dict):
-    model_list = ['random', 'spatial', 'multitask', 'spatial_multitask',]
-    modelname_map = {'random':'random', 'spatial':'spatial', 'multitask':'task', 'spatial_multitask':'spatial+task', 'matching':'matching*', 'spatial_matching':'matching'}
-    data = []
-    for _, model_name in enumerate(model_list):
-        if fitness_list_dict is None:
-            energy_dist = read_func(f'{model_name}_[0-9]*')
-        else:
-            energy_dist = fitness_list_dict[model_name]
 
-        for energy in energy_dist:
-            data.append({'Generative model': modelname_map[model_name], 'Energy': energy})
-
-    df = pd.DataFrame(data)    
-    
-    palette = ['#7f7f7f', '#2ca02c', '#ff7f0e', '#1f77b4']  # 米色, 绿色, 橙色, 蓝色
-    names_order = ['random', 'spatial', 'task', 'spatial+task']
-    
-    group = 'Generative model'
-    column = 'Energy'
-    
-    fig, ax = plt.subplots(figsize=(2.0, 1.5))
-    ax = sns.boxplot(x=group, y=column, data=df, ax=ax, palette=palette,  
-                boxprops=dict(facecolor='none', linewidth=0.25), width=0.3, 
-                flierprops={
-                             'markersize': 1,      # 异常值的大小
-                             'markeredgewidth': 0.25,  # 异常值边框线宽
-                             }, 
-                whiskerprops={'linewidth': 0.25}, medianprops={'linewidth': 0.25}, capprops={'linewidth': 0.25})
-    ax = sns.stripplot(x=group, y=column, data=df, 
-                dodge=False, ax=ax, palette=palette, jitter=0.1, size=0.6, color='black', alpha=0.4)
-    
-    box_pairs = []
-    for i in range(len(names_order)):
-        for j in range(i+1, len(names_order)):
-            box_pairs.append((names_order[i], names_order[j]))
-    
-    add_stat_annotation(ax, data=df, x=group, y=column, order=names_order,
-                        box_pairs=box_pairs, test='t-test_ind', text_format='star', loc='inside', verbose=2, fontsize=5)
-
-    ax.tick_params(axis='both', labelsize=5)
-    ax.tick_params(axis='both', width=0.25)
-    ax.spines['top'].set_linewidth(0.25)    
-    ax.spines['bottom'].set_linewidth(0.25) 
-    ax.spines['left'].set_linewidth(0.25)  
-    ax.spines['right'].set_linewidth(0.25)  
-
-    ax.set_xlabel('Generative model', fontsize=6)
-    ax.set_ylabel('Energy', fontsize=6)
-    
-    # plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
-    plt.savefig('./figures/Fig5/Fig5b.jpg', format='jpg', dpi=300)
-    plt.savefig('./figures/Fig5/Fig5b.svg', format='svg', dpi=300)
 
 def start_parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--people_num', default=200, type=int)
     parser.add_argument('--nruns', default=900, type=int)
     parser.add_argument('--load_step', default=40000, type=int)
+    parser.add_argument('--directed', action='store_true')
     parser.add_argument('--read_from_file', action='store_true')
     args = parser.parse_args()
     return args
@@ -490,12 +473,12 @@ if __name__ == '__main__':
     if not os.path.exists(figures_path):
         os.makedirs(figures_path)
 
-    lock_random_seed(2025)
+    lock_random_seed(2026)
     args = start_parse()
     if args.read_from_file:
         fitness_list_dict = None
     else:
-        fitness_list_dict = cal_energy(num_of_people = args.people_num, load_step = args.load_step)
+        fitness_list_dict = cal_energy(args)
     
     plot_figure5b(fitness_list_dict)
     plot_figure5c()    

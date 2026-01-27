@@ -71,6 +71,159 @@ class ActivationHook:
         self.activations.append(input[0].detach().clone())
 
 
+def get_hidden_states(model, device):
+    hp = model.hp
+    hidden_states_list = []
+    def hook(module, input, output):
+        input, = input
+        # input.shape: T * Batch_size * N
+        hidden_states_list.append(input.detach().mean(dim=(1)))
+        
+    handle = model.readout.register_forward_hook(hook)
+    for rule in hp['rule_trains']:
+        trial = task.generate_trials(
+            rule, hp, 'random',
+            batch_size=512)
+
+        input = torch.from_numpy(trial.x).to(device)
+        output = model(input)
+
+    handle.remove()
+    return hidden_states_list
+
+
+def prepare_data_for_gnm(load_step, num_of_seed:int, device, path='./datasets/brain_hcp_data/84/structureM_use.mat'):
+    # 定义缓存文件名，包含关键参数以防参数改变时读错数据
+    cache_dir = './datasets/brain_hcp_data/84/cache'
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f'gnm_prepared_data_step{load_step}_seed{num_of_seed}.npz')
+
+    # 1. 检查是否存在缓存文件
+    if os.path.exists(cache_path):
+        print(f"Loading prepared GNM data from cache: {cache_path}")
+        with np.load(cache_path, allow_pickle=True) as data:
+            subjects_conn_data = data['GT']
+            Distance = data['Distance']
+            Fc = data['FC'] # 从 ndarray 转回 list
+        return subjects_conn_data, Distance, Fc
+
+    print(f"No cache found. Processing raw data (load_step={load_step}, seeds={num_of_seed})...")
+
+    import scipy.io
+    from tqdm import tqdm
+    subjects_conn_data = scipy.io.loadmat(path)['structureM_use']
+    subjects_conn_data = np.transpose(subjects_conn_data, [2, 0, 1])
+    subjects_conn_data = subjects_conn_data.astype(np.float32)
+    Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
+
+    Fc = []
+    for seed in tqdm(range(1, num_of_seed+1)):
+
+        file_name = f'./runs/Fig5_data/84/n_rnn_84_task_20_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
+        model = torch.load(file_name, device)   
+
+        hidden_states_list = get_hidden_states(model, device)
+        for task_id in range(20):
+            hidden_states = hidden_states_list[task_id]
+            random_value = torch.rand_like(hidden_states) 
+            hidden_states =  hidden_states + random_value * 1e-7
+
+            hidden_states_mean = hidden_states.detach().cpu().numpy()
+            fc = np.corrcoef(hidden_states_mean, rowvar=False)
+            fc[fc < 0] = 1e-5
+            np.fill_diagonal(fc, 0)
+            Fc.append(fc)
+
+    np.savez(cache_path, GT=subjects_conn_data, Distance=Distance, FC=np.array(Fc))
+    print(f"Data saved to cache: {cache_path}")
+        
+    return subjects_conn_data, Distance, Fc
+
+
+def diagnostic_mle_fit(s_sims, feature_names=None, save_path="diagnostic_mle_fit.png"):
+    import matplotlib.pyplot as plt
+    import scipy.stats as stats
+    import pingouin as pg
+    import seaborn as sns
+    """
+    评判模拟特征 s_sims 是否符合高斯分布假设
+    s_sims: np.array, 形状为 [n_sims, d], d为28
+    """
+    n_sims, d = s_sims.shape
+    if feature_names is None:
+        feature_names = [f"Feat_{i}" for i in range(d)]
+    
+    print(f"--- 诊断报告 (样本量: {n_sims}, 维度: {d}) ---")
+    
+    # 1. 单变量偏度与峰度检测 (理想值应接近 0)
+    skewness = stats.skew(s_sims)
+    kurtosis = stats.kurtosis(s_sims)
+    
+    # 2. 多元正态性检验 (Henze-Zirkler Test)
+    # 添加超时保护，防止卡死
+    try:
+        import signal
+
+        def timeout_handler(_signum=None, _frame=None):
+            raise TimeoutError("HZ test timeout")
+
+        # 设置 30 秒超时
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(30)
+
+        hz_result = pg.multivariate_normality(s_sims)
+        signal.alarm(0)  # 取消超时
+
+        print(f"\n多元正态性检测 (Henze-Zirkler):")
+        print(hz_result)
+    except (TimeoutError, RuntimeError, Exception) as e:
+        print(f"\n⚠️  HZ 检测失败: {str(e)[:50]}... (可能是样本不足或协方差矩阵奇异)")
+        print("   建议: 增加 n_sims 或使用对角协方差假设")
+
+    # 3. 计算马氏距离 (Mahalanobis Distance)
+    # 理论上，服从多元正态分布的数据，其马氏距离平方应服从卡方分布 chi2(df=d)
+    mu = np.mean(s_sims, axis=0)
+    cov = np.cov(s_sims, rowvar=False) + 1e-6 * np.eye(d)
+    inv_cov = np.linalg.inv(cov)
+    
+    diff = s_sims - mu
+    md_squared = np.sum(diff @ inv_cov * diff, axis=1)
+    
+    # 4. 可视化
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    
+    # 图 A: 偏度与峰度散点图 (评估离群维度)
+    axes[0].scatter(skewness, kurtosis, alpha=0.6)
+    axes[0].axhline(0, color='r', linestyle='--')
+    axes[0].axvline(0, color='r', linestyle='--')
+    axes[0].set_title("Skewness vs Kurtosis per Dimension")
+    axes[0].set_xlabel("Skewness")
+    axes[0].set_ylabel("Kurtosis")
+
+    # 图 B: 马氏距离与卡方分布对比 (Q-Q Plot 思想)
+    # 理论分位数
+    theoretical_qs = stats.chi2.ppf(np.linspace(0.01, 0.99, n_sims), df=d)
+    sorted_md = np.sort(md_squared)
+    axes[1].scatter(theoretical_qs, sorted_md, alpha=0.6)
+    axes[1].plot([theoretical_qs.min(), theoretical_qs.max()], 
+                 [theoretical_qs.min(), theoretical_qs.max()], 'r--')
+    axes[1].set_title("MD^2 vs Chi-Square Quantiles")
+    axes[1].set_xlabel("Theoretical Chi2 Quantiles")
+    axes[1].set_ylabel("Empirical MD^2")
+
+    # 图 C: 相关性热图 (检查特征冗余度)
+    sns.heatmap(np.corrcoef(s_sims, rowvar=False), ax=axes[2], cmap='coolwarm', center=0)
+    axes[2].set_title("Feature Correlation Matrix")
+    
+    plt.tight_layout()
+    plt.savefig(save_path)
+
+    plt.close(fig) 
+    plt.close('all') # 双重保险，清除当前所有未关闭的绘图对象
+    del fig, axes
+
+    return {"skew": skewness, "kurt": kurtosis, "hz": hz_result if 'hz_result' in locals() else None}
+
 
 def popvec(y):
     """Population vector read out.

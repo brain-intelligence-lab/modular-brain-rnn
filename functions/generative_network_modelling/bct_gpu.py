@@ -38,7 +38,7 @@ def matching_ind_gpu(CIJ, device, only_min=False):
     return Min.cpu().numpy(), Mout.cpu().numpy(), Mall.cpu().numpy()
 
 
-def clustering_coef_bu_gpu(G, device):
+def clustering_coef_bu_gpu(G, device, to_tensor=False):
     G = bct.utils.binarize(G, copy=True)
     G = torch.tensor(G, dtype=torch.float32, device=device)  # 将矩阵转移到 GPU
     n = G.shape[0]
@@ -57,10 +57,12 @@ def clustering_coef_bu_gpu(G, device):
 
     # 处理分母为0的情况
     C[possible_triangle_count == 0] = 0.0
-
+    if to_tensor:
+        return C
     return C.cpu().numpy()  # 将结果转回 CPU
 
-def betweenness_bin_gpu(G, device):
+
+def betweenness_bin_gpu(G, device, to_tensor=False):
     G = bct.utils.binarize(G, copy=True)
     G = torch.tensor(G, dtype=torch.float32, device=device)  # 将矩阵转移到 GPU
     n = len(G)  # number of nodes
@@ -94,37 +96,163 @@ def betweenness_bin_gpu(G, device):
         DPd1 = torch.mm(((L == d) * (1 + DP) / NSP), G.t()) * \
             ((L == (d - 1)) * NSP)
         DP += DPd1
+    result = torch.sum(DP, dim=0)
+    if to_tensor:
+        return result
 
-    return torch.sum(DP, dim=0).cpu().numpy()
+    return result.cpu().numpy()
 
 
-# def matching_ind_fc(CIJ, fc):
-#     n = len(CIJ)
+def degrees_und_batched(conn_matrix_batch, device):
+    """
+    批量计算无向图的度
+    
+    参数:
+        conn_matrix_batch: [batch_size, n, n] 的邻接矩阵 tensor，已经在 device 上
+        device: 设备
+    
+    返回:
+        degrees_batch: [batch_size, n] 的度 tensor
+    """
+    conn_matrix_batch = torch.as_tensor(conn_matrix_batch, dtype=torch.float32, device=device)
+    conn_matrix_batch = (conn_matrix_batch > 0).float()
 
-#     Min = np.zeros((n, n))
+    degrees_batch = conn_matrix_batch.sum(dim=2)  # [batch_size, n]
+    return degrees_batch
 
-#     # compare incoming connections
-#     for i in range(n - 1):
-#         for j in range(i + 1, n):
-#             c1i = CIJ[:, i]
-#             c2i = CIJ[:, j]
 
-#             fc1i = fc[:, i]
-#             fc2i = fc[:, j]
-#             usei = np.logical_or(c1i, c2i)
-#             usei[i] = 0
-#             usei[j] = 0
-#             nconi = np.sum(fc1i[usei]) + np.sum(fc2i[usei])
-#             if not nconi:
-#                 Min[i, j] = 0
-#             else:
-#                 and_mask = np.logical_and(c1i, c2i) 
-#                 Min[i, j] = 2 * \
-#                     (np.sum(fc1i[and_mask])+np.sum(fc2i[and_mask])) / nconi
+def clustering_coef_bu_gpu_batched(G_batch, device):
+    """
+    批量计算聚类系数
+    
+    参数:
+        G_batch: [batch_size, n, n] 的邻接矩阵 tensor，已经在 device 上
+        device: 设备
+    
+    返回:
+        C_batch: [batch_size, n] 的聚类系数 tensor
+    """
+    # 确保输入是 tensor 且在正确的设备上
+    if isinstance(G_batch, np.ndarray):
+        G_batch = torch.tensor(G_batch, dtype=torch.float32, device=device)
+    else:
+        G_batch = torch.as_tensor(G_batch, dtype=torch.float32, device=device)
+    
+    # 二值化
+    G_batch = (G_batch > 0).float()
+    
+    batch_size, n, _ = G_batch.shape
+    
+    # 批量计算 G^2: [batch_size, n, n]
+    G_square = torch.bmm(G_batch, G_batch)  # batch matrix multiplication
+    triangle_count = G_square * G_batch  # [batch_size, n, n]
+    
+    # 计算每个节点的度: [batch_size, n]
+    degrees = G_batch.sum(dim=2)  # [batch_size, n]
+    
+    # 计算聚类系数
+    possible_triangle_count = degrees * (degrees - 1)  # [batch_size, n]
+    C_batch = triangle_count.sum(dim=2) / possible_triangle_count  # [batch_size, n]
+    
+    # 处理分母为0的情况
+    C_batch[possible_triangle_count == 0] = 0.0
+    return C_batch
 
-#     Min = Min + Min.T
+def betweenness_bin_gpu_batched(G_batch, device):
+    """
+    批量计算介数中心性
+    
+    参数:
+        G_batch: [batch_size, n, n] 的邻接矩阵 tensor，已经在 device 上
+        device: 设备
+    
+    返回:
+        result_batch: [batch_size, n] 的介数中心性 tensor
+    """
+    # 确保输入是 tensor 且在正确的设备上
+    if isinstance(G_batch, np.ndarray):
+        G_batch = torch.tensor(G_batch, dtype=torch.float32, device=device)
+    else:
+        G_batch = torch.as_tensor(G_batch, dtype=torch.float32, device=device)
+    
+    # 二值化
+    G_batch = (G_batch > 0).float()
+    
+    batch_size, n, _ = G_batch.shape
+    I = torch.eye(n, device=device).unsqueeze(0).expand(batch_size, -1, -1)  # [batch_size, n, n]
+    
+    d = 1  # path length
+    NPd = G_batch.clone()  # [batch_size, n, n]
+    NSPd = G_batch.clone()
+    NSP = G_batch.clone()
+    L = G_batch.clone()
 
-#     return Min
+    NSP[I == 1] = 1
+    L[I == 1] = 1
+
+    # Calculate NSP and L for all batches
+    while torch.any(NSPd):
+        d += 1
+        NPd = torch.bmm(NPd, G_batch)  # batch matrix multiplication
+        NSPd = NPd * (L == 0)
+        NSP += NSPd
+        L = L + d * (NSPd != 0).float()
+
+    L[L == 0] = float('inf')
+    L[I == 1] = 0
+    NSP[NSP == 0] = 1
+
+    DP = torch.zeros((batch_size, n, n), device=device)
+    diam = d - 1
+
+    # Calculate DP for all batches
+    for d_val in range(diam, 1, -1):
+        # [batch_size, n, n] operations
+        L_eq_d = (L == d_val).float()
+        L_eq_dm1 = (L == (d_val - 1)).float()
+        DPd1 = torch.bmm((L_eq_d * (1 + DP) / NSP), G_batch.transpose(1, 2)) * (L_eq_dm1 * NSP)
+        DP += DPd1
+    
+    result_batch = torch.sum(DP, dim=1)  # [batch_size, n]
+    return result_batch
+
+
+def edge_lengths_batched(conn_matrix_batch, Distance, device, directed=False):
+    """
+    批量提取边的长度
+    
+    参数:
+        conn_matrix_batch: [batch_size, n, n] 的邻接矩阵 tensor，已经在 device 上
+        Distance: [n, n] 的距离矩阵 tensor
+        device: 设备
+        directed: 是否为有向图
+    
+    返回:
+        edge_lengths_list: list of tensors (长度为batch_size)，每个元素是 [num_edges_i] 的数组
+    """
+    conn_matrix_batch = torch.as_tensor(conn_matrix_batch, dtype=torch.float32, device=device)
+    Distance = torch.as_tensor(Distance, dtype=torch.float32, device=device)
+    
+    batch_size, n, _ = conn_matrix_batch.shape
+    conn_binary = (conn_matrix_batch > 0).float()
+    edge_lengths_list = []
+    
+    if directed:
+        mask = ~torch.eye(n, dtype=torch.bool, device=device)
+        u_all, v_all = torch.where(mask)
+        for i in range(batch_size):
+            edges = conn_binary[i, u_all, v_all] > 0
+            edge_lengths = Distance[u_all, v_all][edges]
+            edge_lengths_list.append(edge_lengths)
+    else:
+        u_idx, v_idx = torch.triu_indices(n, n, offset=1, device=device)
+        for i in range(batch_size):
+            edges = conn_binary[i, u_idx, v_idx] > 0
+            edge_lengths = Distance[u_idx, v_idx][edges]
+            edge_lengths_list.append(edge_lengths)
+    
+    return edge_lengths_list
+
 
 if __name__=='__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

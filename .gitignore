@@ -5,3 +5,4 @@
 *.pth
 *runs
 *figures/*/
+*.npz
