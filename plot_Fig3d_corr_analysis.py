@@ -60,7 +60,7 @@ def plot_scatter(x_array, y_array, xlabel='Modularity', ylabel='Performance', fi
         transform=plt.gca().transAxes,  # Use relative coordinates
         verticalalignment='top',  # Text top alignment
         fontsize=5,  # Specify font size here
-        bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5', linewidth=0.25)  # edge框Set
+        bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5', linewidth=0.25)  # Set edge border
     )
 
     axs.set_box_aspect(1)  # Set aspect ratio of plotting box to 1
@@ -219,7 +219,7 @@ for m_idx, n_rnn in enumerate(model_size_list):
     thresholds = np.arange(1, m+1) / m * 0.05
 
     sort_p_list = np.array(sort_p_list)
-    # 找出最大满足 p(i) <= threshold 的 p-value
+    # Find the largest p-value that satisfies p(i) <= threshold
     significant = sort_p_list <= thresholds
 
     if np.any(significant):
@@ -233,11 +233,11 @@ for m_idx, n_rnn in enumerate(model_size_list):
     x_ticks = [ i for i in range(39, len(r_list)+1, 40)]
 
     x_tick_labels = [500*(i+1) for i in x_ticks]
-    # Define行数
+    # Define number of rows
     rows = 2
 
     fig_width = 2.8
-    fig_height = 3.5 # 给title、label和间距留出一些额外space
+    fig_height = 3.5 # Reserve some extra space for title, label and spacing
     fig, axs = plt.subplots(nrows=2, ncols=1, figsize=(fig_width, fig_height))
 
     # --- subgraph 1: correlation (Correlation) ---
@@ -256,24 +256,24 @@ for m_idx, n_rnn in enumerate(model_size_list):
 
 
     for ax in axs:
-        # --- 这是保证正方形的关键 ---
+        # --- This is the key to ensure square shape ---
         ax.set_box_aspect(1)  # Set aspect ratio of plotting box to 1
         
         ax.set_xticks(x_ticks)
         ax.set_xticklabels(x_tick_labels)
         
-        # Set坐标轴style
+        # Set coordinate axis style
         for spine in ax.spines.values():
             spine.set_linewidth(0.25)
             
         ax.tick_params(axis='both', width=0.25, length=1.0, labelsize=5, pad=1)
         ax.set_xlabel('Iterations', fontsize=6, labelpad=1)
 
-    # Remove顶部graph的 x 轴label
+    # Remove x-axis label from top graph
     axs[0].set_xlabel('')
 
-    # adjustsubgraph之间的间距
-    plt.subplots_adjust(hspace=0.6) # 增加垂直间距，防止title和上graph重叠
+    # Adjust spacing between subgraphs
+    plt.subplots_adjust(hspace=0.6) # Increase vertical spacing to prevent title and top graph overlap
 
     plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.svg", format='svg', dpi=300)
     plt.savefig(f"{figure_path}/correlation_bar_{n_rnn}_{runs_name}.jpg", format='jpg', dpi=300)

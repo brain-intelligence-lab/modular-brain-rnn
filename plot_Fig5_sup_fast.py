@@ -126,14 +126,14 @@ def fit_mle_fast_batch(s_obs_tensor, prob_matrix_batch, Distance, tot_conn_num,
     
     # If total batch size is less than or equal to max_batch_size, process all at once
     if total_batch_size <= max_batch_size:
-        # 1. 将每个 prob_matrix 复制 n_sims 次，形成 [n_params * n_sims, n, n]
+        # 1. Replicate each prob_matrix n_sims times to form [n_params * n_sims, n, n]
         prob_matrix_expanded = prob_matrix_batch.repeat_interleave(n_sims, dim=0)
         
-        # 2. 批量Generate所有graph: [n_params * n_sims, n, n]
+        # 2. Batch generate all graphs: [n_params * n_sims, n, n]
         adj_batch = gnm_batched(prob_matrix_expanded, tot_conn_num, 
                                 directed=directed, device=device)
         
-        # 3. 批量Calculatestatistics量（充分利用 GPU 并行Process）
+        # 3. Batch compute statistics (fully utilizing GPU parallel processing)
         s_sims_all = get_summary_stats_torch_batched(adj_batch, Distance, device, directed=directed)  # [n_params * n_sims, d]
     else:
         # Process in batches to avoid GPU memory overflow
@@ -169,7 +169,7 @@ def fit_mle_fast_batch(s_obs_tensor, prob_matrix_batch, Distance, tot_conn_num,
         
         s_sims_all = torch.cat(s_list, dim=0)  # [n_params * n_sims, d]
     
-    # 4. 对每个parameter组合Calculate似然value
+    # 4. Calculate likelihood value for each parameter combination
     lls = []
     for i in range(n_params):
         s_sims_i = s_sims_all[i * n_sims:(i + 1) * n_sims]  # [n_sims, d]
@@ -210,20 +210,20 @@ def plot_model_comparison(results_df):
 
         ax.set_yscale('log')
         
-        # 1. 明确Getmedian并建立“数value->color”的精确映射
+        # 1. Clearly obtain median and establish precise mapping from value to color
         medians = df_plot.groupby('Model_Display')[metric].median()
-        # 必须按照 display_order 的顺序映射color
+        # Must map color according to the order of display_order
         val_to_color = {medians[m]: palette[idx] for idx, m in enumerate(display_order)}
         median_values = list(val_to_color.keys())
 
-        # 2. Plotmedian水平虚线
+        # 2. Plot median horizontal dashed lines
         for idx, model_name in enumerate(display_order):
             m_val = medians[model_name]
             ax.axhline(y=m_val, xmin=0, xmax=(idx + 0.5) / len(display_order), 
                        color=palette[idx], linestyle='--', linewidth=0.25, alpha=0.5)
 
-        # 3. Process刻度冲突：Remove靠近median的默认刻度
-        plt.draw() # 先触发一次默认刻度Generate
+        # 3. Handle tick conflicts: remove default ticks close to median
+        plt.draw() # First trigger default tick generation
         default_ticks = ax.get_yticks()
         final_ticks = []
         for d_tick in default_ticks:
@@ -233,29 +233,29 @@ def plot_model_comparison(results_df):
         all_ticks = sorted(list(set(final_ticks) | set(median_values)))
         ax.set_yticks(all_ticks)
         
-        # 4. 【关键修复】：手动Setlabel，不再依赖 Formatter，确保匹配一致性
-        # 对非median的刻度，如果是10的整数幂则Display，否则隐藏或简单Display
+        # 4. [Key fix]: Manually set labels, no longer rely on Formatter, ensure consistency
+        # For non-median ticks, display if power of 10, otherwise hide or display simply
         tick_labels = []
         for v in all_ticks:
             is_median = False
             for m_val in median_values:
                 if abs(v - m_val) < 1e-2:
-                    tick_labels.append(f"{v:.1f}") # median保留一位小数
+                    tick_labels.append(f"{v:.1f}") # Median keeps one decimal place
                     is_median = True
                     break
             if not is_median:
-                # 默认刻度只Display整数
+                # Default ticks display integer values only
                 tick_labels.append(f"{int(v)}" if v >= 1 else f"{v:.1g}")
         
         ax.set_yticklabels(tick_labels)
 
-        # 5. Add显著性标注 (Annotator)
+        # 5. Add significance annotation (Annotator)
         box_pairs = [(display_order[0], display_order[1]), (display_order[1], display_order[2]), (display_order[0], display_order[2])]
         annotator = Annotator(ax, box_pairs, data=df_plot, x='Model_Display', y=metric, order=display_order)
         annotator.configure(test='t-test_ind', text_format='star', loc='inside', fontsize=5, line_width=0.5)
         annotator.apply_test().annotate()
 
-        # 6. 【color着色修复】：直接遍历刚才Set好的 Labels
+        # 6. [Color coloring fix]: Directly traverse the Labels we just set
         plt.draw()
         labels = ax.get_yticklabels()
         for lbl in labels:
@@ -264,18 +264,18 @@ def plot_model_comparison(results_df):
             try:
                 val = float(txt)
                 for m_val, color in val_to_color.items():
-                    if abs(val - m_val) < 1e-1: # 容差匹配
+                    if abs(val - m_val) < 1e-1: # Tolerance matching
                         lbl.set_color(color)
                         lbl.set_fontweight('bold')
                         lbl.set_fontsize(5)
             except: continue
 
-        # 细节微调
+        # Fine-tune details
         ax.set_xlabel('Generative Model', fontsize=6)
         ax.set_ylabel(metric, fontsize=6)
         ax.tick_params(axis='both', labelsize=5, width=0.5, length=2)
 
-        # 调细坐标轴edge框
+        # Fine-tune axis spine width
         for spine in ax.spines.values():
             spine.set_linewidth(0.5)
 
@@ -313,7 +313,7 @@ for p_idx in tqdm(range(num_of_people)):
     if os.path.exists(save_filename):
         print(f"Loading existing results for person {p_idx} from {save_filename}...")
         data = np.load(save_filename, allow_pickle=True)
-        # GetSave的model字典
+        # Get the saved model dictionary
         model_name_lls = data['model_name_lls'].item()
         
         # Add existing results to plotting records
@@ -322,7 +322,7 @@ for p_idx in tqdm(range(num_of_people)):
             if isinstance(info, (list, tuple)):
                 ll_val, params_val = info[0], info[1]
                 # Calculate missing AIC/BIC
-                n_samples = d_dimensions # 默认featuredimension
+                n_samples = d_dimensions # Default feature dimension
                 k_params = 2 if m_name == 'spatial_multitask' else 1
                 aic_val = 2 * k_params - 2 * ll_val
                 bic_val = k_params * np.log(n_samples) - 2 * ll_val
@@ -468,17 +468,17 @@ for p_idx in tqdm(range(num_of_people)):
         #     # Perform PCA projection on best simulated data for diagnostics
         #     # We need to verify whether data follows normal distribution in PCA space
         #     # ---------------------------------------------------------
-        #     # 1. 标准化 (与 fit_mle_fast_batch 逻辑一致)
+        #     # 1. Normailzation (consistent with fit_mle_fast_batch)
         #     mu = best_s_sims_raw.mean(dim=0)
         #     std = best_s_sims_raw.std(dim=0, unbiased=True) + 1e-6
         #     best_s_sims_norm = (best_s_sims_raw - mu) / std
             
-        #     # 2. Calculate PCA 投影
+        #     # 2. Calculate PCA Projection
         #     # Note: Although re-computing SVD here, for diagnostic purposes,
         #     # verifying "whether there exists a linear transformation that normalizes the data" is sufficient.
         #     U, S, Vh = torch.linalg.svd(best_s_sims_norm, full_matrices=False)
             
-        #     # 3. 投影到前 n_features_effective 个dimension
+        #     # 3. Projection to the first n_features_effective-dimension
         #     # First few rows of Vh are principal component directions
         #     components = Vh[:n_pca_components, :].T
         #     best_s_sims_pca = best_s_sims_norm @ components # [n_sims, 8]
@@ -495,7 +495,7 @@ for p_idx in tqdm(range(num_of_people)):
         # print(f"Running diagnostic for Subject {p_idx}, Model {model_name}...")
         # diagnostic_mle_fit(
         #     best_s_sims_for_plot, 
-        #     feature_names=pca_feat_names,  # 传入label
+        #     feature_names=pca_feat_names,  # sendin label
         #     save_path=f"diagnostic_subject_{p_idx}_{model_name}_PCA.png"
         # )
 

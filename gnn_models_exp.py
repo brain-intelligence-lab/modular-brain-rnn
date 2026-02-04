@@ -274,7 +274,7 @@ if __name__ == "__main__":
 
     lock_random_seed(seed=args.seed)    
     
-    # --- data集Load与Prepare ---
+    # --- Load and prepare dataset ---
     dataset = MoleculeNet(root=args.dataset_dir, name="Tox21")
     shuffled_indices = torch.randperm(len(dataset))
 
@@ -304,12 +304,12 @@ if __name__ == "__main__":
     task_idx = args.task_idx
 
     if task_idx == -1:
-        print("\n--- Start多task学习 (MTL) experiment ---")
+        print("\n--- Start multi-task learning (MTL) experiment ---")
 
-        # 根据indexcreatedata集
+        # Create dataset based on indices
 
-        print(f"training集size: {len(train_dataset)}")
-        print(f"verify集size: {len(val_dataset)}")
+        print(f"training set size: {len(train_dataset)}")
+        print(f"validation set size: {len(val_dataset)}")
 
         model = GCN(
             hidden_channels=args.hidden_channels,
@@ -322,10 +322,10 @@ if __name__ == "__main__":
 
     else:
 
-        print("\n--- Start单task学习 (STL) experiment ---")
+        print("\n--- Start single-task learning (STL) experiment ---")
         all_tasks_val_aucs = []
 
-        # 每次都重新Initialize一个新model
+        # Re-initialize a new model each time
         model = GCN(
             hidden_channels=args.hidden_channels,
             num_node_features=dataset.num_node_features,
@@ -336,7 +336,7 @@ if __name__ == "__main__":
         task_train_indices = [i for i, data in enumerate(train_dataset) if not torch.isnan(data.y[0, task_idx])]
         task_val_indices = [i for i, data in enumerate(val_dataset) if not torch.isnan(data.y[0, task_idx])]
             
-        # 从已经划分好的training/verify集中再次筛选
+        # Filter again from already divided training/validation sets
         task_train_subset = torch.utils.data.Subset(train_dataset, task_train_indices)
         task_val_subset = torch.utils.data.Subset(val_dataset, task_val_indices)
 
@@ -379,52 +379,52 @@ if __name__ == "__main__":
             
                 weights_list = []
                 for idx, layer_to_analyze in enumerate(layers_to_scale):
-                    print(f" Startanalysislayer '{layer_to_analyze}' 的weightmodule度 (Global Batch: {global_batch_counter})...")
+                    print(f" Start analyzing layer '{layer_to_analyze}' weight modularity (Global Batch: {global_batch_counter})...")
 
                     target_layer = None
                     try:
                         target_layer = dict(model.named_modules())[layer_to_analyze]
 
                     except KeyError:
-                        print(f"error：model中找不到名为 '{layer_to_analyze}' 的layer。")
-                        print(f"可用layer包括: {[name for name, _ in model.named_modules() if '.' not in name and name != '']}")
+                        print(f"error: cannot find layer named '{layer_to_analyze}' in model.")
+                        print(f"available layers include: {[name for name, _ in model.named_modules() if '.' not in name and name != '']}")
                 
 
                     weight_tensor = target_layer.lin.weight.detach()
                 
-                    # --- Processweight张量 ---
-                    if weight_tensor.dim() == 4: # 卷积layerweight
+                    # --- Process weight tensor ---
+                    if weight_tensor.dim() == 4: # Convolutional layer weight
 
                         if idx == 0: 
-                            # 形状: (out_channels, in_channels, kH, kW) 展开转置为 2D: (in_channels * kH * kW, out_channels)
+                            # Shape: (out_channels, in_channels, kH, kW) reshape and transpose to 2D: (in_channels * kH * kW, out_channels)
                             weight_tensor_new = weight_tensor.reshape(weight_tensor.size(0), -1).T
                         else:
-                            # (out_channels, in_channels, kH, kW) ---> (in_channels, out_channels,  kH,  kW) ----> (in_channels, out_channels * kH * kW)
+                            # (out_channels, in_channels, kH, kW) ---> (in_channels, out_channels, kH, kW) ----> (in_channels, out_channels * kH * kW)
                             weight_tensor_new = weight_tensor.permute(1, 0, 2, 3)
                             weight_tensor_new = weight_tensor_new.reshape(weight_tensor_new.size(0), -1)
 
-                        print(f" 检测到4D卷积layerweight (形状: {weight_tensor.shape}), 已展开为 2D matrix并转置 (形状: {weight_tensor_new.shape})")
+                        print(f" Detected 4D convolutional layer weight (shape: {weight_tensor.shape}), reshaped to 2D matrix and transposed (shape: {weight_tensor_new.shape})")
 
-                    elif weight_tensor.dim() == 2: # 全connectionlayerweight
+                    elif weight_tensor.dim() == 2: # Fully connected layer weight
                         weight_tensor_new = weight_tensor
-                        print(f" 检测到2D全connectionlayerweight (形状: {weight_tensor.shape})")
+                        print(f" Detected 2D fully connected layer weight (shape: {weight_tensor.shape})")
                     else:
-                        raise ValueError(f"不支持的weightdimension: {weight_tensor.dim()}")
+                        raise ValueError(f"unsupported weight dimension: {weight_tensor.dim()}")
                     
                     weights_list.append(weight_tensor_new.cpu().numpy())
 
                     if idx == 1:
 
-                        if weight_tensor.dim() == 4: # 卷积layerweight
-                            # 形状: (out_channels, in_channels, kH, kW) 展开为 2D: (out_channels, in_channels * kH * kW)
+                        if weight_tensor.dim() == 4: # Convolutional layer weight
+                            # Shape: (out_channels, in_channels, kH, kW) reshape to 2D: (out_channels, in_channels * kH * kW)
                             reshaped_weight = weight_tensor.reshape(weight_tensor.size(0), -1)
-                            print(f" 检测到4D卷积layerweight (形状: {weight_tensor.shape}), 已展开为 2D matrix (形状: {reshaped_weight.shape})")
+                            print(f" Detected 4D convolutional layer weight (shape: {weight_tensor.shape}), reshaped to 2D matrix (shape: {reshaped_weight.shape})")
                             weight_tensor = reshaped_weight
 
-                        elif weight_tensor.dim() == 2: # 全connectionlayerweight
-                            print(f" 检测到2D全connectionlayerweight (形状: {weight_tensor.shape})。")
+                        elif weight_tensor.dim() == 2: # Fully connected layer weight
+                            print(f" Detected 2D fully connected layer weight (shape: {weight_tensor.shape}).")
                         else:
-                            raise ValueError(f"不支持的weightdimension: {weight_tensor.dim()}")
+                            raise ValueError(f"unsupported weight dimension: {weight_tensor.dim()}")
 
                         weight_numpy = np.abs(weight_tensor.cpu().numpy())
                         mod1, mod2 = calculate_modularity_in_r(weight_numpy, args.r_script_path)

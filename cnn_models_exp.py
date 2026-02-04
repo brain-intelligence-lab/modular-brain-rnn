@@ -206,7 +206,7 @@ if __name__ == "__main__":
         assert all(0 <= x < 10 for x in args.classes_to_use)
     else:
         args.classes_to_use = set(range(args.class_num))
-    print(f"使用的class别IDlist: {args.classes_to_use if args.classes_to_use is not None else '前'+str(args.class_num)+'class'}")
+    print(f"Using class ID list: {args.classes_to_use if args.classes_to_use is not None else 'first ' + str(args.class_num) + ' classes'}")
     
     device = torch.device(f'cuda:{args.gpu}' if args.gpu >= 0 else 'cpu')
     
@@ -260,18 +260,18 @@ if __name__ == "__main__":
             x2 = x2.to(device)
             labels = labels.to(device)
 
-            # 前向传播
+            # Forward propagation
             embd1, embd2 = model(x1, x2)
             loss = criterion(embd1, embd2, labels) 
 
-            # 反向传播和optimize
+            # Backward propagation and optimization
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             global_batch_counter += 1
             loss_sum += loss.item()
 
-            # --- module度Calculate ---
+            # --- Modularity calculation ---
             if global_batch_counter % args.analyze_every_n_batches == 0:
                 print("-" * 50)
                 if global_batch_counter != 0:
@@ -293,38 +293,38 @@ if __name__ == "__main__":
                     weight_tensor = target_layer.weight.detach()
                 
                     # --- Processweight张量 ---
-                    if weight_tensor.dim() == 4: # 卷积layerweight
+                    if weight_tensor.dim() == 4: # Convolutional layer weight
 
                         if idx == 0: 
-                            # 形状: (out_channels, in_channels, kH, kW) 展开转置为 2D: (in_channels * kH * kW, out_channels)
+                            # Shape: (out_channels, in_channels, kH, kW) reshape and transpose to 2D: (in_channels * kH * kW, out_channels)
                             weight_tensor_new = weight_tensor.reshape(weight_tensor.size(0), -1).T
                         else:
-                            # (out_channels, in_channels, kH, kW) ---> (in_channels, out_channels,  kH,  kW) ----> (in_channels, out_channels * kH * kW)
+                            # (out_channels, in_channels, kH, kW) ---> (in_channels, out_channels, kH, kW) ----> (in_channels, out_channels * kH * kW)
                             weight_tensor_new = weight_tensor.permute(1, 0, 2, 3)
                             weight_tensor_new = weight_tensor_new.reshape(weight_tensor_new.size(0), -1)
 
-                        print(f" 检测到4D卷积layerweight (形状: {weight_tensor.shape}), 已展开为 2D matrix并转置 (形状: {weight_tensor_new.shape})")
+                        print(f" Detected 4D convolutional layer weight (shape: {weight_tensor.shape}), reshaped to 2D matrix and transposed (shape: {weight_tensor_new.shape})")
 
-                    elif weight_tensor.dim() == 2: # 全connectionlayerweight
+                    elif weight_tensor.dim() == 2: # Fully connected layer weight
                         weight_tensor_new = weight_tensor
-                        print(f" 检测到2D全connectionlayerweight (形状: {weight_tensor.shape})")
+                        print(f" Detected 2D fully connected layer weight (shape: {weight_tensor.shape})")
                     else:
-                        raise ValueError(f"不支持的weightdimension: {weight_tensor.dim()}")
+                        raise ValueError(f"unsupported weight dimension: {weight_tensor.dim()}")
                     
                     weights_list.append(weight_tensor_new.cpu().numpy())
 
                     if idx == 1:
 
-                        if weight_tensor.dim() == 4: # 卷积layerweight
-                            # 形状: (out_channels, in_channels, kH, kW) 展开为 2D: (out_channels, in_channels * kH * kW)
+                        if weight_tensor.dim() == 4: # Convolutional layer weight
+                            # Shape: (out_channels, in_channels, kH, kW) reshape to 2D: (out_channels, in_channels * kH * kW)
                             reshaped_weight = weight_tensor.reshape(weight_tensor.size(0), -1)
-                            print(f" 检测到4D卷积layerweight (形状: {weight_tensor.shape}), 已展开为 2D matrix (形状: {reshaped_weight.shape})")
+                            print(f" Detected 4D convolutional layer weight (shape: {weight_tensor.shape}), reshaped to 2D matrix (shape: {reshaped_weight.shape})")
                             weight_tensor = reshaped_weight
 
-                        elif weight_tensor.dim() == 2: # 全connectionlayerweight
-                            print(f" 检测到2D全connectionlayerweight (形状: {weight_tensor.shape})。")
+                        elif weight_tensor.dim() == 2: # Fully connected layer weight
+                            print(f" Detected 2D fully connected layer weight (shape: {weight_tensor.shape}).")
                         else:
-                            raise ValueError(f"不支持的weightdimension: {weight_tensor.dim()}")
+                            raise ValueError(f"unsupported weight dimension: {weight_tensor.dim()}")
 
 
                         weight_numpy = np.abs(weight_tensor.cpu().numpy())
@@ -343,4 +343,4 @@ if __name__ == "__main__":
                 loss_sum = 0.0    
                 print("-" * 50)
 
-    print("\n所有trainingComplete...")
+    print("\nAll training complete...")
