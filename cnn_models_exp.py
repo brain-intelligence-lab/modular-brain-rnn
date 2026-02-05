@@ -10,7 +10,7 @@ import os
 import matplotlib.pyplot as plt 
 import tensorflow as tf
 from functions.utils.eval_utils import calculate_modularity_in_r, calculate_modularity_for_fc_layer
-from functions.utils.math_utils import lock_random_seed
+from functions.utils.common_utils import lock_random_seed
 import argparse
 import bct
 import pdb

@@ -5,7 +5,7 @@ import pdb
 import bct
 import torch
 import matplotlib.cm as cm
-from functions.utils.plot_utils import plot_fig, get_seed_avg
+from functions.utils.common_utils import plot_fig, get_seed_avg
 import scipy.stats as stats
 import statsmodels.formula.api as smf
 import pandas as pd

@@ -1,7 +1,7 @@
 import torch
 from models.gnn import GCN
 from functions.utils.eval_utils import calculate_modularity_in_r, calculate_modularity_for_fc_layer
-from functions.utils.math_utils import lock_random_seed
+from functions.utils.common_utils import lock_random_seed
 from torch_geometric.loader import DataLoader
 from torch_geometric.datasets import MoleculeNet
 import argparse

@@ -1,11 +1,9 @@
 import torch
 import numpy as np
 import seaborn as sns  # Import seaborn
-from functions.utils.eval_utils import do_eval
-from datasets.multitask import rules_dict, Multitask_Batches_Realtime_Gen
+from datasets.multitask import Multitask_Batches_Realtime_Gen
 import matplotlib.pyplot as plt # Import matplotlib
 import pandas as pd # Import pandas for data processing
-import matplotlib.ticker as mticker
 import pickle
 import argparse
 import os
@@ -75,7 +73,6 @@ def run_perturbation_analysis_for_checkpoint(args, model_size, seed, alphas):
         
     original_W_rec = model.recurrent_conn.weight.data.clone().detach()
     pre_loss = get_data_loss(train_loader, model, device)
-    # log = do_eval(model, rule_train=rules_dict['all'], verbose=False)
     # original_perf = log['perf_avg'][-1]
 
     # 3. Perform perturbation analysis for each alpha level

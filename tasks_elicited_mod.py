@@ -2,17 +2,15 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import pdb
-import tensorflow as tf
-from functions.utils.plot_utils import get_seed_avg
+from functions.utils.common_utils import get_seed_avg
 from matplotlib.patches import Patch
 import os
 
 matplotlib.rcParams['pdf.fonttype'] = 42
 
 
-
 def plot_fig2a(model_size_list, color_dict=None):
-    directory_name = "./runs/Fig2a_data_RNN_relu"
+    directory_name = "./runs/Fig2a_data"
     seed_list = [i for i in range(100, 2100, 100)]
     # Ensure task names exactly match those in your filesystem/data loader
     task_name_list = ['fdgo', 'reactgo', 'delaygo', 'fdanti', 'reactanti', 'delayanti',

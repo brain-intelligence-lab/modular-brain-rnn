@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from functions.utils.math_utils import lock_random_seed
+from functions.utils.common_utils import lock_random_seed
 from tensorboardX import SummaryWriter
 from datetime import datetime
 import os

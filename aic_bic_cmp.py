@@ -1,6 +1,7 @@
 from functions.generative_network_modelling.generative_network_modelling import *
-from functions.utils.eval_utils import prepare_data_for_gnm, diagnostic_mle_fit
-from functions.utils.math_utils import lock_random_seed, \
+from functions.utils.common_utils import prepare_data_for_gnm
+from functions.utils.math_utils import diagnostic_mle_fit
+from functions.utils.common_utils import lock_random_seed
       compute_syn_loglik, compute_syn_loglik_with_pca, check_pca_variance
 from statannotations.Annotator import Annotator
 from tqdm import tqdm

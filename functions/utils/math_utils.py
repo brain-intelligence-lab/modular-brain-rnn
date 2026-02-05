@@ -1,18 +1,6 @@
-import random
 import torch
 import numpy as np
 from typing import List
-import os
-
-def lock_random_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = "myseed"  # str(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
 
 
 def find_connected_components(adj_matrix):     
@@ -351,3 +339,88 @@ def check_pca_variance(s_sims):
         print(f"{i+1:<10} | {evr[i]:.4f} ({evr[i]*100:.1f}%)   | {cvr[i]*100:.1f}%")
         
     return cvr
+
+
+def diagnostic_mle_fit(s_sims, feature_names=None, save_path="diagnostic_mle_fit.png"):
+    import matplotlib.pyplot as plt
+    import scipy.stats as stats
+    import pingouin as pg
+    import seaborn as sns
+    """
+    Judge whether simulation features s_sims follow Gaussian distribution assumption.
+    s_sims: np.array, shape [n_sims, d], d is 28
+    """
+    n_sims, d = s_sims.shape
+    if feature_names is None:
+        feature_names = [f"Feat_{i}" for i in range(d)]
+
+    print(f"--- Diagnostic Report (Sample size: {n_sims}, Dimension: {d}) ---")
+
+    # 1. Univariate skewness and kurtosis detection (ideal values should be close to 0)
+    skewness = stats.skew(s_sims)
+    kurtosis = stats.kurtosis(s_sims)
+
+    # 2. Multivariate normality test (Henze-Zirkler Test)
+    # Add timeout protection to prevent hanging
+    try:
+        import signal
+
+        def timeout_handler(_signum=None, _frame=None):
+            raise TimeoutError("HZ test timeout")
+
+        # Set 30 second timeout
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(30)
+
+        hz_result = pg.multivariate_normality(s_sims)
+        signal.alarm(0)  # Cancel timeout
+
+        print(f"\nMultivariate normality test (Henze-Zirkler):")
+        print(hz_result)
+    except (TimeoutError, RuntimeError, Exception) as e:
+        print(f"\n⚠️  HZ test failed: {str(e)[:50]}... (possibly due to insufficient samples or singular covariance matrix)")
+        print("   Suggestion: Increase n_sims or use diagonal covariance assumption")
+
+    # 3. Calculate Mahalanobis Distance
+    # Theoretically, for data following multivariate normal distribution, squared Mahalanobis distance should follow chi-square distribution chi2(df=d)
+    mu = np.mean(s_sims, axis=0)
+    cov = np.cov(s_sims, rowvar=False) + 1e-6 * np.eye(d)
+    inv_cov = np.linalg.inv(cov)
+    
+    diff = s_sims - mu
+    md_squared = np.sum(diff @ inv_cov * diff, axis=1)
+
+    # 4. Visualization
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # Figure A: Skewness vs Kurtosis scatter plot (evaluate outlier dimensions)
+    axes[0].scatter(skewness, kurtosis, alpha=0.6)
+    axes[0].axhline(0, color='r', linestyle='--')
+    axes[0].axvline(0, color='r', linestyle='--')
+    axes[0].set_title("Skewness vs Kurtosis per Dimension")
+    axes[0].set_xlabel("Skewness")
+    axes[0].set_ylabel("Kurtosis")
+
+    # Figure B: Mahalanobis distance vs chi-square distribution (Q-Q Plot concept)
+    # Theoretical quantiles
+    theoretical_qs = stats.chi2.ppf(np.linspace(0.01, 0.99, n_sims), df=d)
+    sorted_md = np.sort(md_squared)
+    axes[1].scatter(theoretical_qs, sorted_md, alpha=0.6)
+    axes[1].plot([theoretical_qs.min(), theoretical_qs.max()], 
+                 [theoretical_qs.min(), theoretical_qs.max()], 'r--')
+    axes[1].set_title("MD^2 vs Chi-Square Quantiles")
+    axes[1].set_xlabel("Theoretical Chi2 Quantiles")
+    axes[1].set_ylabel("Empirical MD^2")
+
+    # Figure C: Correlation heatmap (check feature redundancy)
+    sns.heatmap(np.corrcoef(s_sims, rowvar=False), ax=axes[2], cmap='coolwarm', center=0)
+    axes[2].set_title("Feature Correlation Matrix")
+
+    plt.tight_layout()
+    plt.savefig(save_path)
+
+    plt.close(fig)
+    plt.close('all') # Double insurance, clear all currently unclosed plotting objects
+    del fig, axes
+
+    return {"skew": skewness, "kurt": kurtosis, "hz": hz_result if 'hz_result' in locals() else None}

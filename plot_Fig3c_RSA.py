@@ -1,5 +1,5 @@
 import datasets.multitask as task
-from functions.utils.math_utils import lock_random_seed
+from functions.utils.common_utils import lock_random_seed
 import matplotlib.pyplot as plt
 import pdb
 from tqdm import tqdm

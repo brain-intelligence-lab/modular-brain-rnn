@@ -92,138 +92,6 @@ def get_hidden_states(model, device):
     return hidden_states_list
 
 
-def prepare_data_for_gnm(load_step, num_of_seed:int, device, path='./datasets/brain_hcp_data/84/structureM_use.mat'):
-    # Define cache filename including key parameters to prevent reading wrong data when parameters change
-    cache_dir = './datasets/brain_hcp_data/84/cache'
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, f'gnm_prepared_data_step{load_step}_seed{num_of_seed}.npz')
-
-    # 1. Check if cache file exists
-    if os.path.exists(cache_path):
-        print(f"Loading prepared GNM data from cache: {cache_path}")
-        with np.load(cache_path, allow_pickle=True) as data:
-            subjects_conn_data = data['GT']
-            Distance = data['Distance']
-            Fc = data['FC'] # Convert from ndarray back to list
-        return subjects_conn_data, Distance, Fc
-
-    print(f"No cache found. Processing raw data (load_step={load_step}, seeds={num_of_seed})...")
-
-    import scipy.io
-    from tqdm import tqdm
-    subjects_conn_data = scipy.io.loadmat(path)['structureM_use']
-    subjects_conn_data = np.transpose(subjects_conn_data, [2, 0, 1])
-    subjects_conn_data = subjects_conn_data.astype(np.float32)
-    Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
-
-    Fc = []
-    for seed in tqdm(range(1, num_of_seed+1)):
-
-        file_name = f'./runs/Fig5_data/84/n_rnn_84_task_20_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
-        model = torch.load(file_name, device)   
-
-        hidden_states_list = get_hidden_states(model, device)
-        for task_id in range(20):
-            hidden_states = hidden_states_list[task_id]
-            random_value = torch.rand_like(hidden_states) 
-            hidden_states =  hidden_states + random_value * 1e-7
-
-            hidden_states_mean = hidden_states.detach().cpu().numpy()
-            fc = np.corrcoef(hidden_states_mean, rowvar=False)
-            fc[fc < 0] = 1e-5
-            np.fill_diagonal(fc, 0)
-            Fc.append(fc)
-
-    np.savez(cache_path, GT=subjects_conn_data, Distance=Distance, FC=np.array(Fc))
-    print(f"Data saved to cache: {cache_path}")
-        
-    return subjects_conn_data, Distance, Fc
-
-
-def diagnostic_mle_fit(s_sims, feature_names=None, save_path="diagnostic_mle_fit.png"):
-    import matplotlib.pyplot as plt
-    import scipy.stats as stats
-    import pingouin as pg
-    import seaborn as sns
-    """
-    Judge whether simulation features s_sims follow Gaussian distribution assumption.
-    s_sims: np.array, shape [n_sims, d], d is 28
-    """
-    n_sims, d = s_sims.shape
-    if feature_names is None:
-        feature_names = [f"Feat_{i}" for i in range(d)]
-
-    print(f"--- Diagnostic Report (Sample size: {n_sims}, Dimension: {d}) ---")
-
-    # 1. Univariate skewness and kurtosis detection (ideal values should be close to 0)
-    skewness = stats.skew(s_sims)
-    kurtosis = stats.kurtosis(s_sims)
-
-    # 2. Multivariate normality test (Henze-Zirkler Test)
-    # Add timeout protection to prevent hanging
-    try:
-        import signal
-
-        def timeout_handler(_signum=None, _frame=None):
-            raise TimeoutError("HZ test timeout")
-
-        # Set 30 second timeout
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(30)
-
-        hz_result = pg.multivariate_normality(s_sims)
-        signal.alarm(0)  # Cancel timeout
-
-        print(f"\nMultivariate normality test (Henze-Zirkler):")
-        print(hz_result)
-    except (TimeoutError, RuntimeError, Exception) as e:
-        print(f"\n⚠️  HZ test failed: {str(e)[:50]}... (possibly due to insufficient samples or singular covariance matrix)")
-        print("   Suggestion: Increase n_sims or use diagonal covariance assumption")
-
-    # 3. Calculate Mahalanobis Distance
-    # Theoretically, for data following multivariate normal distribution, squared Mahalanobis distance should follow chi-square distribution chi2(df=d)
-    mu = np.mean(s_sims, axis=0)
-    cov = np.cov(s_sims, rowvar=False) + 1e-6 * np.eye(d)
-    inv_cov = np.linalg.inv(cov)
-    
-    diff = s_sims - mu
-    md_squared = np.sum(diff @ inv_cov * diff, axis=1)
-
-    # 4. Visualization
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-
-    # Figure A: Skewness vs Kurtosis scatter plot (evaluate outlier dimensions)
-    axes[0].scatter(skewness, kurtosis, alpha=0.6)
-    axes[0].axhline(0, color='r', linestyle='--')
-    axes[0].axvline(0, color='r', linestyle='--')
-    axes[0].set_title("Skewness vs Kurtosis per Dimension")
-    axes[0].set_xlabel("Skewness")
-    axes[0].set_ylabel("Kurtosis")
-
-    # Figure B: Mahalanobis distance vs chi-square distribution (Q-Q Plot concept)
-    # Theoretical quantiles
-    theoretical_qs = stats.chi2.ppf(np.linspace(0.01, 0.99, n_sims), df=d)
-    sorted_md = np.sort(md_squared)
-    axes[1].scatter(theoretical_qs, sorted_md, alpha=0.6)
-    axes[1].plot([theoretical_qs.min(), theoretical_qs.max()], 
-                 [theoretical_qs.min(), theoretical_qs.max()], 'r--')
-    axes[1].set_title("MD^2 vs Chi-Square Quantiles")
-    axes[1].set_xlabel("Theoretical Chi2 Quantiles")
-    axes[1].set_ylabel("Empirical MD^2")
-
-    # Figure C: Correlation heatmap (check feature redundancy)
-    sns.heatmap(np.corrcoef(s_sims, rowvar=False), ax=axes[2], cmap='coolwarm', center=0)
-    axes[2].set_title("Feature Correlation Matrix")
-
-    plt.tight_layout()
-    plt.savefig(save_path)
-
-    plt.close(fig)
-    plt.close('all') # Double insurance, clear all currently unclosed plotting objects
-    del fig, axes
-
-    return {"skew": skewness, "kurt": kurtosis, "hz": hz_result if 'hz_result' in locals() else None}
-
 
 def popvec(y):
     """Population vector read out.
@@ -496,7 +364,7 @@ def do_eval_with_dataset_torch_fast(model, rule_train, global_data, verbose=Fals
 
 if __name__ == '__main__':
     import time
-    from math_utils import lock_random_seed
+    from .common_utils import lock_random_seed
     lock_random_seed(2024)
     n_rnn = 32
     seed = 200 # Use an existing seed to ensure model file can be loaded

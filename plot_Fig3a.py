@@ -1,6 +1,6 @@
 import numpy as np 
 import matplotlib.pyplot as plt
-from functions.utils.plot_utils import list_files, plot_fig
+from functions.utils.common_utils import list_files, plot_fig
 
 import pdb
 import tensorflow as tf

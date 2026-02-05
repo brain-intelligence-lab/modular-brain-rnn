@@ -1,8 +1,8 @@
 import numpy as np
 import torch
 from functions.generative_network_modelling.generative_network_modelling import *
-from functions.utils.math_utils import lock_random_seed
-from functions.utils.eval_utils import prepare_data_for_gnm
+from functions.utils.common_utils import lock_random_seed
+from functions.utils.common_utils import prepare_data_for_gnm
 import matplotlib.pyplot as plt
 import argparse
 import seaborn as sns

@@ -7,7 +7,7 @@ import matplotlib
 import matplotlib.cm as cm
 import scipy.stats as stats
 from statannot import add_stat_annotation 
-from functions.utils.plot_utils import list_files, plot_fig
+from functions.utils.common_utils import list_files, plot_fig
 from functions.utils.math_utils import find_connected_components, get_induced_subgraphs
 import bct
 import torch

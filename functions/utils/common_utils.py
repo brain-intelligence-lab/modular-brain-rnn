@@ -1,7 +1,23 @@
 import os
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+import torch
+from .eval_utils import get_hidden_states
 import matplotlib.pyplot as plt
+import random
+
+
+def lock_random_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = "myseed"  # str(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+
 
 def list_files(directory, name):
     path_list = []
@@ -18,6 +34,8 @@ def list_files(directory, name):
     assert len(path_list) == 1, f"The len of path_list: {len(path_list)} \
         should be 1, given directory: {directory}, name: {name}"
     return None
+
+
 
 def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False):
     seed_paths_list = []
@@ -54,6 +72,59 @@ def get_seed_avg(directory_name, model_size, task, seed_list, chance_flag=False)
     modularity_mean = np.mean(modularity_seed_array, axis=0)
     print(f'model_size:{model_size}, avg_perf:{perf_avg_mean.mean():.4f}, avg_moduarlity:{modularity_mean.mean():.4f}')    
     return modularity_seed_array, perf_avg_seed_array
+
+
+
+def prepare_data_for_gnm(load_step, num_of_seed:int, device, path='./datasets/brain_hcp_data/84/structureM_use.mat'):
+    # Define cache filename including key parameters to prevent reading wrong data when parameters change
+    cache_dir = './datasets/brain_hcp_data/84/cache'
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f'gnm_prepared_data_step{load_step}_seed{num_of_seed}.npz')
+
+    # 1. Check if cache file exists
+    if os.path.exists(cache_path):
+        print(f"Loading prepared GNM data from cache: {cache_path}")
+        with np.load(cache_path, allow_pickle=True) as data:
+            subjects_conn_data = data['GT']
+            Distance = data['Distance']
+            Fc = data['FC'] # Convert from ndarray back to list
+        return subjects_conn_data, Distance, Fc
+
+    print(f"No cache found. Processing raw data (load_step={load_step}, seeds={num_of_seed})...")
+
+    import scipy.io
+    from tqdm import tqdm
+    subjects_conn_data = scipy.io.loadmat(path)['structureM_use']
+    subjects_conn_data = np.transpose(subjects_conn_data, [2, 0, 1])
+    subjects_conn_data = subjects_conn_data.astype(np.float32)
+    Distance = np.load('./datasets/brain_hcp_data/84/Raw_dis.npy')
+
+    Fc = []
+    for seed in tqdm(range(1, num_of_seed+1)):
+
+        file_name = f'./runs/Fig5_data/84/n_rnn_84_task_20_seed_{seed}/RNN_interleaved_learning_{load_step}.pth'
+        model = torch.load(file_name, device)   
+
+        hidden_states_list = get_hidden_states(model, device)
+        for task_id in range(20):
+            hidden_states = hidden_states_list[task_id]
+            random_value = torch.rand_like(hidden_states) 
+            hidden_states =  hidden_states + random_value * 1e-7
+
+            hidden_states_mean = hidden_states.detach().cpu().numpy()
+            fc = np.corrcoef(hidden_states_mean, rowvar=False)
+            fc[fc < 0] = 1e-5
+            np.fill_diagonal(fc, 0)
+            Fc.append(fc)
+
+    np.savez(cache_path, GT=subjects_conn_data, Distance=Distance, FC=np.array(Fc))
+    print(f"Data saved to cache: {cache_path}")
+        
+    return subjects_conn_data, Distance, Fc
+
+
+
+
 
 def plot_fig(directory_name, seed_list, task_name_list, model_size_list, ylabel, **kwargs):
     # check if path exists
