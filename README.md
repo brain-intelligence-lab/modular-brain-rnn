@@ -19,7 +19,7 @@ This is the official repository for **[Task-structured modularity emerges in art
 
 In this study, we demonstrate that multitask and incremental learning enhance modularity in recurrent neural networks (RNNs) compared to single-task learning, revealing how functional demands influence the structural organization of neural networks.
 
-![Schematics](./figures/Schematics.svg)
+![Schematics](./figures/Schematics.png)
 
 ## Repo Contents
 
@@ -94,7 +94,7 @@ Before repeating an experiment, use a fresh log directory or rename the previous
 
 ## Overall Workflow
 
-![](./figures/workflow.svg)
+![Overall workflow](./figures/workflow.png)
 
 ## Citation
 
